@@ -14,9 +14,17 @@ marked.setOptions({
 
 function withHeadingAnchors(text: string, prefix: string) {
   let index = 0;
+  let fence: string | undefined;
   return text
     .split(/\r?\n/)
     .map((line) => {
+      const fenceMatch = /^\s*(```+|~~~+)/.exec(line);
+      if (fenceMatch) {
+        const marker = fenceMatch[1][0];
+        fence = fence === marker ? undefined : fence || marker;
+        return line;
+      }
+      if (fence) return line;
       if (!/^(#{1,4})\s+/.test(line)) return line;
       const anchor = `<span id="${prefix}-${index}" class="heading-anchor"></span>`;
       index += 1;
@@ -36,4 +44,3 @@ export default function MarkdownBlock({ text, anchorPrefix }: Props) {
 
   return <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} />;
 }
-

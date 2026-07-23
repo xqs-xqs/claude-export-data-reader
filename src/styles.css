@@ -18,6 +18,11 @@
   --accent-soft: #f1ded4;
   --human: #eeece5;
   --code: #efeee9;
+  --scroll-thumb: rgba(76, 70, 61, 0.34);
+  --scroll-thumb-hover: rgba(76, 70, 61, 0.56);
+  --chat-font-size: 16px;
+  --sidebar-font-size: 13px;
+  --outline-font-size: 13px;
   --shadow: 0 8px 28px rgba(39, 34, 26, 0.06);
 }
 
@@ -36,6 +41,8 @@
   --accent-soft: #50362b;
   --human: #35332d;
   --code: #1d1c19;
+  --scroll-thumb: rgba(220, 214, 202, 0.3);
+  --scroll-thumb-hover: rgba(220, 214, 202, 0.5);
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
 }
 
@@ -63,14 +70,14 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 282px minmax(560px, 1fr) 224px;
+  grid-template-columns: 282px minmax(560px, 1fr) 248px;
   width: 100%;
   height: 100%;
   background: var(--page);
 }
 
 .app-shell.sidebar-closed {
-  grid-template-columns: minmax(560px, 1fr) 224px;
+  grid-template-columns: minmax(560px, 1fr) 248px;
 }
 
 .app-shell.outline-closed {
@@ -183,7 +190,7 @@ button {
   outline: 0;
   color: var(--text);
   background: transparent;
-  font-size: 13px;
+  font-size: var(--sidebar-font-size);
 }
 
 .search input::placeholder {
@@ -195,19 +202,14 @@ button {
   justify-content: space-between;
   padding: 0 10px 8px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(var(--sidebar-font-size) - 1.5px);
   font-weight: 600;
 }
 
 .conversation-list {
   min-height: 0;
   flex: 1;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.conversation-list::-webkit-scrollbar {
-  display: none;
+  overflow-y: scroll;
 }
 
 .conversation-list button {
@@ -237,14 +239,14 @@ button {
 .conversation-title {
   overflow: hidden;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: var(--sidebar-font-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .conversation-date {
   color: var(--faint);
-  font-size: 10px;
+  font-size: calc(var(--sidebar-font-size) - 2.5px);
 }
 
 .account-card {
@@ -324,6 +326,77 @@ button {
   gap: 3px;
 }
 
+.font-settings-anchor {
+  position: relative;
+}
+
+.font-button {
+  font-family: Georgia, serif;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.font-popover {
+  position: absolute;
+  z-index: 30;
+  top: 41px;
+  right: -40px;
+  width: 255px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.font-popover-title {
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.font-popover label {
+  display: block;
+  margin: 11px 0;
+}
+
+.font-popover label span {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.font-popover label strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.font-popover input {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.font-reset {
+  width: 100%;
+  min-height: 32px;
+  margin-top: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--page);
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.font-reset:hover {
+  color: var(--text);
+  background: var(--panel-hover);
+}
+
 .icon-button {
   display: grid;
   place-items: center;
@@ -348,11 +421,59 @@ button {
   cursor: default;
 }
 
+.outline-toggle {
+  width: auto;
+  gap: 5px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+
+.outline-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
 .conversation-scroll {
   width: 100%;
   height: 100%;
-  overflow-y: auto;
+  overflow-y: scroll;
   scroll-behavior: smooth;
+}
+
+.conversation-list,
+.conversation-scroll,
+.outline {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+.conversation-list::-webkit-scrollbar,
+.conversation-scroll::-webkit-scrollbar,
+.outline::-webkit-scrollbar {
+  width: 11px;
+}
+
+.conversation-list::-webkit-scrollbar-track,
+.conversation-scroll::-webkit-scrollbar-track,
+.outline::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.conversation-list::-webkit-scrollbar-thumb,
+.conversation-scroll::-webkit-scrollbar-thumb,
+.outline::-webkit-scrollbar-thumb {
+  min-height: 34px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+  background-clip: padding-box;
+}
+
+.conversation-list::-webkit-scrollbar-thumb:hover,
+.conversation-scroll::-webkit-scrollbar-thumb:hover,
+.outline::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: padding-box;
 }
 
 .conversation {
@@ -414,7 +535,7 @@ button {
 .markdown {
   color: var(--text);
   font-family: Georgia, "Noto Serif SC", serif;
-  font-size: 16px;
+  font-size: var(--chat-font-size);
   line-height: 1.72;
 }
 
@@ -573,7 +694,7 @@ button {
 
 .thinking-body .markdown {
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: calc(var(--chat-font-size) - 2px);
 }
 
 .tool-card-header > span:nth-child(2) {
@@ -694,23 +815,49 @@ button {
 
 .outline {
   min-width: 0;
-  padding: 80px 13px 24px 12px;
-  overflow-y: auto;
+  padding: 70px 13px 24px 12px;
+  overflow-y: scroll;
   background: var(--page);
   border-left: 1px solid var(--line);
-  scrollbar-width: none;
 }
 
-.outline::-webkit-scrollbar {
-  display: none;
+.outline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  margin-bottom: 7px;
 }
 
 .outline-title {
-  margin: 0 10px 11px;
+  margin: 0 10px;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: calc(var(--outline-font-size) - 1px);
   font-weight: 700;
   letter-spacing: 0.06em;
+}
+
+.outline-close {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.outline-close:hover {
+  color: var(--text);
+  background: var(--panel-hover);
+}
+
+.outline-close svg {
+  width: 15px;
+  height: 15px;
 }
 
 .outline nav {
@@ -718,7 +865,7 @@ button {
   flex-direction: column;
 }
 
-.outline button {
+.outline nav button {
   position: relative;
   width: 100%;
   overflow: hidden;
@@ -729,7 +876,7 @@ button {
   border-radius: 6px;
   color: var(--faint);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--outline-font-size);
   line-height: 1.35;
   text-align: left;
   text-overflow: ellipsis;
@@ -737,17 +884,17 @@ button {
   cursor: pointer;
 }
 
-.outline button:hover {
+.outline nav button:hover {
   color: var(--text);
   background: color-mix(in srgb, var(--panel-hover) 55%, transparent);
 }
 
-.outline button.is-active {
+.outline nav button.is-active {
   color: var(--text);
   font-weight: 600;
 }
 
-.outline button.is-active::before {
+.outline nav button.is-active::before {
   position: absolute;
   top: 6px;
   bottom: 6px;
@@ -761,7 +908,7 @@ button {
 .outline p {
   margin: 0 10px;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--outline-font-size);
   line-height: 1.55;
 }
 
@@ -814,14 +961,18 @@ button {
 
 @media (max-width: 1180px) {
   .app-shell {
-    grid-template-columns: 260px minmax(560px, 1fr);
-  }
-
-  .outline {
-    display: none;
+    grid-template-columns: 240px minmax(480px, 1fr) 220px;
   }
 
   .app-shell.sidebar-closed {
+    grid-template-columns: minmax(480px, 1fr) 220px;
+  }
+
+  .app-shell.outline-closed {
+    grid-template-columns: 240px minmax(480px, 1fr);
+  }
+
+  .app-shell.sidebar-closed.outline-closed {
     grid-template-columns: 1fr;
   }
 }

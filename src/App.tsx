@@ -4,6 +4,7 @@ import { dateLabel, extractHeadings, visibleMessages } from "./conversation";
 import MessageView from "./MessageView";
 import { DEMO_LIBRARY } from "./demo";
 import {
+  ChevronIcon,
   ImportIcon,
   MenuIcon,
   MoonIcon,
@@ -21,6 +22,38 @@ const EMPTY_LIBRARY: Library = {
 };
 
 type Theme = "light" | "dark";
+
+interface FontSettings {
+  chat: number;
+  sidebar: number;
+  outline: number;
+}
+
+const DEFAULT_FONT_SETTINGS: FontSettings = {
+  chat: 16,
+  sidebar: 13,
+  outline: 13
+};
+
+function clamp(value: unknown, minimum: number, maximum: number, fallback: number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric)
+    ? Math.min(maximum, Math.max(minimum, numeric))
+    : fallback;
+}
+
+function initialFontSettings(): FontSettings {
+  try {
+    const saved = JSON.parse(localStorage.getItem("font-settings") || "");
+    return {
+      chat: clamp(saved.chat, 14, 22, DEFAULT_FONT_SETTINGS.chat),
+      sidebar: clamp(saved.sidebar, 11, 18, DEFAULT_FONT_SETTINGS.sidebar),
+      outline: clamp(saved.outline, 11, 18, DEFAULT_FONT_SETTINGS.outline)
+    };
+  } catch {
+    return DEFAULT_FONT_SETTINGS;
+  }
+}
 
 function Sidebar({
   library,
@@ -41,9 +74,7 @@ function Sidebar({
     return [...library.conversations]
       .filter((conversation) =>
         normalized
-          ? `${conversation.name || ""} ${conversation.summary || ""}`
-              .toLocaleLowerCase()
-              .includes(normalized)
+          ? (conversation.name || "").toLocaleLowerCase().includes(normalized)
           : true
       )
       .sort(
@@ -123,15 +154,27 @@ function Sidebar({
 function Outline({
   headings,
   activeId,
-  onNavigate
+  onNavigate,
+  onClose
 }: {
   headings: HeadingEntry[];
   activeId?: string;
   onNavigate: (id: string) => void;
+  onClose: () => void;
 }) {
   return (
     <aside className="outline">
-      <div className="outline-title">本页目录</div>
+      <div className="outline-header">
+        <div className="outline-title">本页目录</div>
+        <button
+          className="outline-close"
+          onClick={onClose}
+          aria-label="收起标题导航"
+          title="收起标题导航"
+        >
+          <ChevronIcon />
+        </button>
+      </div>
       {headings.length ? (
         <nav>
           {headings.map((heading) => (
@@ -147,7 +190,7 @@ function Outline({
           ))}
         </nav>
       ) : (
-        <p>这段会话中没有标题</p>
+        <p>当前会话没有可导航的 Markdown 标题。</p>
       )}
     </aside>
   );
@@ -163,6 +206,10 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem("theme") as Theme) || "light"
   );
+  const [fontSettings, setFontSettings] = useState<FontSettings>(
+    initialFontSettings
+  );
+  const [fontMenuOpen, setFontMenuOpen] = useState(false);
   const [activeHeading, setActiveHeading] = useState<string>();
   const [importing, setImporting] = useState(false);
   const [notice, setNotice] = useState<string>();
@@ -175,6 +222,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("outline-open", String(outlineOpen));
   }, [outlineOpen]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--chat-font-size", `${fontSettings.chat}px`);
+    root.style.setProperty("--sidebar-font-size", `${fontSettings.sidebar}px`);
+    root.style.setProperty("--outline-font-size", `${fontSettings.outline}px`);
+    localStorage.setItem("font-settings", JSON.stringify(fontSettings));
+  }, [fontSettings]);
 
   useEffect(() => {
     if (window.readerAPI) {
@@ -192,6 +247,9 @@ export default function App() {
 
   useEffect(() => {
     function keyboardShortcut(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setFontMenuOpen(false);
+      }
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "o") {
         event.preventDefault();
         setOutlineOpen((value) => !value);
@@ -199,6 +257,20 @@ export default function App() {
     }
     window.addEventListener("keydown", keyboardShortcut);
     return () => window.removeEventListener("keydown", keyboardShortcut);
+  }, []);
+
+  useEffect(() => {
+    function closeFontMenu(event: PointerEvent) {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        !target.closest(".font-settings-anchor")
+      ) {
+        setFontMenuOpen(false);
+      }
+    }
+    window.addEventListener("pointerdown", closeFontMenu);
+    return () => window.removeEventListener("pointerdown", closeFontMenu);
   }, []);
 
   const selectedConversation = useMemo(
@@ -277,7 +349,7 @@ export default function App() {
   return (
     <div
       className={`app-shell ${sidebarOpen ? "" : "sidebar-closed"} ${
-        outlineOpen && headings.length ? "" : "outline-closed"
+        outlineOpen ? "" : "outline-closed"
       }`}
     >
       {sidebarOpen && (
@@ -315,14 +387,62 @@ export default function App() {
             >
               {theme === "light" ? <MoonIcon /> : <SunIcon />}
             </button>
+            <div className="font-settings-anchor">
+              <button
+                className={`icon-button font-button ${fontMenuOpen ? "is-active" : ""}`}
+                onClick={() => setFontMenuOpen((value) => !value)}
+                aria-label="调整字体大小"
+                title="调整字体大小"
+              >
+                Aa
+              </button>
+              {fontMenuOpen && (
+                <div className="font-popover">
+                  <div className="font-popover-title">字体大小</div>
+                  {(
+                    [
+                      ["chat", "聊天正文", 14, 22],
+                      ["sidebar", "左侧会话栏", 11, 18],
+                      ["outline", "右侧标题栏", 11, 18]
+                    ] as const
+                  ).map(([key, label, min, max]) => (
+                    <label key={key}>
+                      <span>
+                        {label}
+                        <strong>{fontSettings[key]} px</strong>
+                      </span>
+                      <input
+                        type="range"
+                        min={min}
+                        max={max}
+                        step="1"
+                        value={fontSettings[key]}
+                        onChange={(event) =>
+                          setFontSettings((current) => ({
+                            ...current,
+                            [key]: Number(event.target.value)
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                  <button
+                    className="font-reset"
+                    onClick={() => setFontSettings(DEFAULT_FONT_SETTINGS)}
+                  >
+                    恢复默认
+                  </button>
+                </div>
+              )}
+            </div>
             <button
-              className={`icon-button ${outlineOpen ? "is-active" : ""}`}
+              className={`icon-button outline-toggle ${outlineOpen ? "is-active" : ""}`}
               onClick={() => setOutlineOpen((value) => !value)}
               aria-label="显示或隐藏标题导航"
               title="标题导航（Ctrl + Shift + O）"
-              disabled={!headings.length}
             >
               <OutlineIcon />
+              <span>目录</span>
             </button>
           </div>
         </header>
@@ -338,7 +458,6 @@ export default function App() {
             <div className="conversation">
               <div className="conversation-heading">
                 <h1>{selectedConversation.name || "未命名会话"}</h1>
-                {selectedConversation.summary && <p>{selectedConversation.summary}</p>}
               </div>
               {messages.map((message) => (
                 <MessageView key={message.uuid} message={message} />
@@ -363,11 +482,12 @@ export default function App() {
         </div>
       </main>
 
-      {outlineOpen && headings.length > 0 && (
+      {outlineOpen && (
         <Outline
           headings={headings}
           activeId={activeHeading}
           onNavigate={navigateToHeading}
+          onClose={() => setOutlineOpen(false)}
         />
       )}
     </div>

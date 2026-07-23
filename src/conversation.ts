@@ -29,10 +29,40 @@ function cleanHeading(text: string) {
     .trim();
 }
 
+function headingsFromText(
+  text: string,
+  prefix: string
+): HeadingEntry[] {
+  const headings: HeadingEntry[] = [];
+  let headingIndex = 0;
+  let fence: string | undefined;
+
+  for (const line of text.split(/\r?\n/)) {
+    const fenceMatch = /^\s*(```+|~~~+)/.exec(line);
+    if (fenceMatch) {
+      const marker = fenceMatch[1][0];
+      fence = fence === marker ? undefined : fence || marker;
+      continue;
+    }
+    if (fence) continue;
+
+    const match = /^(#{1,4})\s+(.+?)\s*#*$/.exec(line);
+    if (!match) continue;
+    headings.push({
+      id: `${prefix}-${headingIndex}`,
+      level: match[1].length,
+      text: cleanHeading(match[2])
+    });
+    headingIndex += 1;
+  }
+  return headings;
+}
+
 export function extractHeadings(messages: Message[]): HeadingEntry[] {
   const headings: HeadingEntry[] = [];
   for (const message of messages) {
     const blocks = message.content || [];
+    let renderedTextBlock = false;
     blocks.forEach((block, blockIndex) => {
       if (
         block.type !== "text" ||
@@ -42,18 +72,19 @@ export function extractHeadings(messages: Message[]): HeadingEntry[] {
       ) {
         return;
       }
-      let headingIndex = 0;
-      for (const line of block.text.split(/\r?\n/)) {
-        const match = /^(#{1,4})\s+(.+?)\s*#*$/.exec(line);
-        if (!match) continue;
-        headings.push({
-          id: `heading-${message.uuid}-${blockIndex}-${headingIndex}`,
-          level: match[1].length,
-          text: cleanHeading(match[2])
-        });
-        headingIndex += 1;
-      }
+      renderedTextBlock = true;
+      headings.push(
+        ...headingsFromText(
+          block.text,
+          `heading-${message.uuid}-${blockIndex}`
+        )
+      );
     });
+    if (!renderedTextBlock && message.text) {
+      headings.push(
+        ...headingsFromText(message.text, `heading-${message.uuid}-fallback`)
+      );
+    }
   }
   return headings;
 }
@@ -67,4 +98,3 @@ export function dateLabel(value?: string) {
     day: "numeric"
   }).format(date);
 }
-
