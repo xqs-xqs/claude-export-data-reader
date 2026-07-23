@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent
+} from "react";
 import type { Conversation, HeadingEntry, Library } from "./types";
 import { dateLabel, extractHeadings, visibleMessages } from "./conversation";
 import MessageView from "./MessageView";
@@ -22,11 +27,24 @@ const EMPTY_LIBRARY: Library = {
 };
 
 type Theme = "light" | "dark";
+type PanelSide = "sidebar" | "outline";
 
 interface FontSettings {
   chat: number;
   sidebar: number;
   outline: number;
+}
+
+interface PanelWidths {
+  sidebar: number;
+  outline: number;
+}
+
+interface ActiveResize {
+  side: PanelSide;
+  pointerId: number;
+  startX: number;
+  startWidth: number;
 }
 
 const DEFAULT_FONT_SETTINGS: FontSettings = {
@@ -35,11 +53,98 @@ const DEFAULT_FONT_SETTINGS: FontSettings = {
   outline: 13
 };
 
+const DEFAULT_PANEL_WIDTHS: PanelWidths = {
+  sidebar: 282,
+  outline: 248
+};
+
+const PANEL_LIMITS = {
+  sidebar: { minimum: 220, maximum: 420 },
+  outline: { minimum: 220, maximum: 400 }
+} as const;
+
+const RESIZER_WIDTH = 7;
+
 function clamp(value: unknown, minimum: number, maximum: number, fallback: number) {
   const numeric = Number(value);
   return Number.isFinite(numeric)
     ? Math.min(maximum, Math.max(minimum, numeric))
     : fallback;
+}
+
+function initialPanelWidths(): PanelWidths {
+  try {
+    const saved = JSON.parse(localStorage.getItem("panel-widths-v1") || "");
+    return {
+      sidebar: clamp(
+        saved.sidebar,
+        PANEL_LIMITS.sidebar.minimum,
+        PANEL_LIMITS.sidebar.maximum,
+        DEFAULT_PANEL_WIDTHS.sidebar
+      ),
+      outline: clamp(
+        saved.outline,
+        PANEL_LIMITS.outline.minimum,
+        PANEL_LIMITS.outline.maximum,
+        DEFAULT_PANEL_WIDTHS.outline
+      )
+    };
+  } catch {
+    return DEFAULT_PANEL_WIDTHS;
+  }
+}
+
+function mainMinimumWidth(viewportWidth: number) {
+  return viewportWidth <= 1180 ? 480 : 560;
+}
+
+function fitPanelWidths(
+  desired: PanelWidths,
+  sidebarOpen: boolean,
+  outlineOpen: boolean,
+  viewportWidth: number
+): PanelWidths {
+  let sidebar = clamp(
+    desired.sidebar,
+    PANEL_LIMITS.sidebar.minimum,
+    PANEL_LIMITS.sidebar.maximum,
+    DEFAULT_PANEL_WIDTHS.sidebar
+  );
+  let outline = clamp(
+    desired.outline,
+    PANEL_LIMITS.outline.minimum,
+    PANEL_LIMITS.outline.maximum,
+    DEFAULT_PANEL_WIDTHS.outline
+  );
+  const openCount = Number(sidebarOpen) + Number(outlineOpen);
+  const available =
+    viewportWidth -
+    mainMinimumWidth(viewportWidth) -
+    openCount * RESIZER_WIDTH;
+
+  if (sidebarOpen && outlineOpen && sidebar + outline > available) {
+    const sidebarFlex = sidebar - PANEL_LIMITS.sidebar.minimum;
+    const outlineFlex = outline - PANEL_LIMITS.outline.minimum;
+    const totalFlex = sidebarFlex + outlineFlex;
+    const excess = sidebar + outline - available;
+    const sidebarReduction =
+      totalFlex > 0 ? Math.min(sidebarFlex, excess * (sidebarFlex / totalFlex)) : 0;
+    sidebar -= sidebarReduction;
+    outline -= Math.min(outlineFlex, excess - sidebarReduction);
+  } else if (sidebarOpen && !outlineOpen) {
+    sidebar = Math.min(sidebar, available);
+  } else if (!sidebarOpen && outlineOpen) {
+    outline = Math.min(outline, available);
+  }
+
+  return {
+    sidebar: Math.round(
+      Math.max(PANEL_LIMITS.sidebar.minimum, sidebar)
+    ),
+    outline: Math.round(
+      Math.max(PANEL_LIMITS.outline.minimum, outline)
+    )
+  };
 }
 
 function initialFontSettings(): FontSettings {
@@ -85,7 +190,7 @@ function Sidebar({
   }, [library.conversations, query]);
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" id="conversation-sidebar">
       <div className="brand">
         <div className="brand-mark">C</div>
         <div>
@@ -162,37 +267,122 @@ function Outline({
   onNavigate: (id: string) => void;
   onClose: () => void;
 }) {
+  const firstQuestion = headings.find((heading) => heading.kind === "question");
+  const activeEntry = headings.find((heading) => heading.id === activeId);
+  const activeQuestionNumber =
+    activeEntry?.questionNumber || firstQuestion?.questionNumber;
+  const visibleEntries = headings.filter(
+    (heading) =>
+      heading.kind === "question" ||
+      !heading.questionNumber ||
+      heading.questionNumber === activeQuestionNumber
+  );
+
   return (
-    <aside className="outline">
+    <aside className="outline" id="conversation-outline">
       <div className="outline-header">
-        <div className="outline-title">本页目录</div>
+        <div className="outline-title">对话导航</div>
         <button
           className="outline-close"
           onClick={onClose}
-          aria-label="收起标题导航"
-          title="收起标题导航"
+          aria-label="收起对话导航"
+          title="收起对话导航"
         >
           <ChevronIcon />
         </button>
       </div>
       {headings.length ? (
         <nav>
-          {headings.map((heading) => (
+          {visibleEntries.map((heading) => (
             <button
               key={heading.id}
-              className={activeId === heading.id ? "is-active" : ""}
-              style={{ paddingLeft: `${10 + (heading.level - 1) * 10}px` }}
-              title={heading.text}
+              className={`outline-entry outline-${heading.kind} ${
+                activeId === heading.id ? "is-active" : ""
+              } ${
+                heading.kind === "question" &&
+                heading.questionNumber === activeQuestionNumber
+                  ? "is-group-open"
+                  : ""
+              }`}
+              title={heading.fullText || heading.text}
               onClick={() => onNavigate(heading.id)}
+              aria-expanded={
+                heading.kind === "question"
+                  ? heading.questionNumber === activeQuestionNumber
+                  : undefined
+              }
             >
-              {heading.text}
+              {heading.kind === "question" && (
+                <span className="outline-question-index">
+                  {heading.questionNumber}
+                </span>
+              )}
+              <span className="outline-entry-text">{heading.text}</span>
             </button>
           ))}
         </nav>
       ) : (
-        <p>当前会话没有可导航的 Markdown 标题。</p>
+        <p>当前会话没有可导航的问题或主要标题。</p>
       )}
     </aside>
+  );
+}
+
+function PanelResizer({
+  side,
+  value,
+  minimum,
+  maximum,
+  active,
+  onPointerDown,
+  onPointerMove,
+  onPointerEnd,
+  onKeyDown,
+  onDoubleClick
+}: {
+  side: PanelSide;
+  value: number;
+  minimum: number;
+  maximum: number;
+  active: boolean;
+  onPointerDown: (
+    side: PanelSide,
+    event: ReactPointerEvent<HTMLDivElement>
+  ) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerEnd: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onKeyDown: (
+    side: PanelSide,
+    event: ReactKeyboardEvent<HTMLDivElement>
+  ) => void;
+  onDoubleClick: (side: PanelSide) => void;
+}) {
+  const label = side === "sidebar" ? "左侧会话栏" : "右侧对话导航";
+  return (
+    <div
+      className={`panel-resizer panel-resizer-${side} ${
+        active ? "is-resizing" : ""
+      }`}
+      role="separator"
+      tabIndex={0}
+      aria-label={`调整${label}宽度`}
+      aria-controls={
+        side === "sidebar" ? "conversation-sidebar" : "conversation-outline"
+      }
+      aria-orientation="vertical"
+      aria-valuemin={minimum}
+      aria-valuemax={maximum}
+      aria-valuenow={value}
+      aria-valuetext={`${value} 像素`}
+      title={`拖动调整${label}宽度，双击恢复默认`}
+      onPointerDown={(event) => onPointerDown(side, event)}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
+      onLostPointerCapture={onPointerEnd}
+      onKeyDown={(event) => onKeyDown(side, event)}
+      onDoubleClick={() => onDoubleClick(side)}
+    />
   );
 }
 
@@ -203,6 +393,13 @@ export default function App() {
   const [outlineOpen, setOutlineOpen] = useState(
     () => localStorage.getItem("outline-open") !== "false"
   );
+  const [panelWidths, setPanelWidths] = useState<PanelWidths>(
+    initialPanelWidths
+  );
+  const panelWidthsRef = useRef(panelWidths);
+  const activeResize = useRef<ActiveResize | undefined>(undefined);
+  const [resizingSide, setResizingSide] = useState<PanelSide>();
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem("theme") as Theme) || "light"
   );
@@ -213,6 +410,29 @@ export default function App() {
   const [activeHeading, setActiveHeading] = useState<string>();
   const [importing, setImporting] = useState(false);
   const [notice, setNotice] = useState<string>();
+  const effectivePanelWidths = useMemo(
+    () =>
+      fitPanelWidths(
+        panelWidths,
+        sidebarOpen,
+        outlineOpen,
+        viewportWidth
+      ),
+    [outlineOpen, panelWidths, sidebarOpen, viewportWidth]
+  );
+
+  useEffect(() => {
+    function trackViewportWidth() {
+      setViewportWidth(window.innerWidth);
+    }
+    window.addEventListener("resize", trackViewportWidth);
+    return () => window.removeEventListener("resize", trackViewportWidth);
+  }, []);
+
+  useEffect(
+    () => () => document.documentElement.classList.remove("is-resizing"),
+    []
+  );
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -343,6 +563,124 @@ export default function App() {
     }
   }
 
+  function panelMaximum(side: PanelSide) {
+    const otherWidth =
+      side === "sidebar"
+        ? outlineOpen
+          ? effectivePanelWidths.outline
+          : 0
+        : sidebarOpen
+          ? effectivePanelWidths.sidebar
+          : 0;
+    const openCount = Number(sidebarOpen) + Number(outlineOpen);
+    const available =
+      viewportWidth -
+      mainMinimumWidth(viewportWidth) -
+      openCount * RESIZER_WIDTH -
+      otherWidth;
+    return Math.max(
+      PANEL_LIMITS[side].minimum,
+      Math.min(PANEL_LIMITS[side].maximum, available)
+    );
+  }
+
+  function updatePanelWidth(
+    side: PanelSide,
+    nextValue: number,
+    persist: boolean
+  ) {
+    const currentWidths = {
+      sidebar: sidebarOpen
+        ? effectivePanelWidths.sidebar
+        : panelWidthsRef.current.sidebar,
+      outline: outlineOpen
+        ? effectivePanelWidths.outline
+        : panelWidthsRef.current.outline
+    };
+    const next = {
+      ...currentWidths,
+      [side]: Math.round(
+        Math.min(
+          panelMaximum(side),
+          Math.max(PANEL_LIMITS[side].minimum, nextValue)
+        )
+      )
+    };
+    panelWidthsRef.current = next;
+    setPanelWidths(next);
+    if (persist) {
+      localStorage.setItem("panel-widths-v1", JSON.stringify(next));
+    }
+  }
+
+  function beginPanelResize(
+    side: PanelSide,
+    event: ReactPointerEvent<HTMLDivElement>
+  ) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    activeResize.current = {
+      side,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: effectivePanelWidths[side]
+    };
+    setResizingSide(side);
+    document.documentElement.classList.add("is-resizing");
+  }
+
+  function movePanelResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const resize = activeResize.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    const movement = event.clientX - resize.startX;
+    const nextValue =
+      resize.startWidth + (resize.side === "sidebar" ? movement : -movement);
+    updatePanelWidth(resize.side, nextValue, false);
+  }
+
+  function finishPanelResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const resize = activeResize.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    activeResize.current = undefined;
+    setResizingSide(undefined);
+    document.documentElement.classList.remove("is-resizing");
+    localStorage.setItem(
+      "panel-widths-v1",
+      JSON.stringify(panelWidthsRef.current)
+    );
+  }
+
+  function resizePanelWithKeyboard(
+    side: PanelSide,
+    event: ReactKeyboardEvent<HTMLDivElement>
+  ) {
+    const step = event.shiftKey ? 30 : 10;
+    const current = effectivePanelWidths[side];
+    let nextValue: number | undefined;
+    if (event.key === "Home") nextValue = PANEL_LIMITS[side].minimum;
+    if (event.key === "End") nextValue = panelMaximum(side);
+    if (side === "sidebar" && event.key === "ArrowLeft") {
+      nextValue = current - step;
+    }
+    if (side === "sidebar" && event.key === "ArrowRight") {
+      nextValue = current + step;
+    }
+    if (side === "outline" && event.key === "ArrowLeft") {
+      nextValue = current + step;
+    }
+    if (side === "outline" && event.key === "ArrowRight") {
+      nextValue = current - step;
+    }
+    if (nextValue === undefined) return;
+    event.preventDefault();
+    updatePanelWidth(side, nextValue, true);
+  }
+
+  function resetPanelWidth(side: PanelSide) {
+    updatePanelWidth(side, DEFAULT_PANEL_WIDTHS[side], true);
+  }
+
   function navigateToHeading(id: string) {
     const scroller = document.querySelector<HTMLElement>(".conversation-scroll");
     const target = document.getElementById(id);
@@ -359,11 +697,17 @@ export default function App() {
     setActiveHeading(id);
   }
 
+  const appStyle = {
+    "--sidebar-width": `${effectivePanelWidths.sidebar}px`,
+    "--outline-width": `${effectivePanelWidths.outline}px`
+  } as CSSProperties;
+
   return (
     <div
       className={`app-shell ${sidebarOpen ? "" : "sidebar-closed"} ${
         outlineOpen ? "" : "outline-closed"
       }`}
+      style={appStyle}
     >
       {sidebarOpen && (
         <Sidebar
@@ -375,6 +719,20 @@ export default function App() {
           }}
           onImport={importArchive}
           importing={importing}
+        />
+      )}
+      {sidebarOpen && (
+        <PanelResizer
+          side="sidebar"
+          value={effectivePanelWidths.sidebar}
+          minimum={PANEL_LIMITS.sidebar.minimum}
+          maximum={panelMaximum("sidebar")}
+          active={resizingSide === "sidebar"}
+          onPointerDown={beginPanelResize}
+          onPointerMove={movePanelResize}
+          onPointerEnd={finishPanelResize}
+          onKeyDown={resizePanelWithKeyboard}
+          onDoubleClick={resetPanelWidth}
         />
       )}
 
@@ -416,7 +774,7 @@ export default function App() {
                     [
                       ["chat", "聊天正文", 14, 22],
                       ["sidebar", "左侧会话栏", 11, 18],
-                      ["outline", "右侧标题栏", 11, 18]
+                      ["outline", "右侧导航栏", 11, 18]
                     ] as const
                   ).map(([key, label, min, max]) => (
                     <label key={key}>
@@ -451,8 +809,8 @@ export default function App() {
             <button
               className={`icon-button outline-toggle ${outlineOpen ? "is-active" : ""}`}
               onClick={() => setOutlineOpen((value) => !value)}
-              aria-label="显示或隐藏标题导航"
-              title="标题导航（Ctrl + Shift + O）"
+              aria-label="显示或隐藏对话导航"
+              title="对话导航（Ctrl + Shift + O）"
             >
               <OutlineIcon />
               <span>目录</span>
@@ -495,6 +853,20 @@ export default function App() {
         </div>
       </main>
 
+      {outlineOpen && (
+        <PanelResizer
+          side="outline"
+          value={effectivePanelWidths.outline}
+          minimum={PANEL_LIMITS.outline.minimum}
+          maximum={panelMaximum("outline")}
+          active={resizingSide === "outline"}
+          onPointerDown={beginPanelResize}
+          onPointerMove={movePanelResize}
+          onPointerEnd={finishPanelResize}
+          onKeyDown={resizePanelWithKeyboard}
+          onDoubleClick={resetPanelWidth}
+        />
+      )}
       {outlineOpen && (
         <Outline
           headings={headings}

@@ -2,6 +2,7 @@ export interface ParsedHeading {
   lineIndex: number;
   level: number;
   text: string;
+  source: "formal" | "structured" | "bold";
 }
 
 interface Fence {
@@ -52,7 +53,7 @@ function structuredHeading(line: string) {
   return hasSectionPrefix || hasNumberedLabel ? text : undefined;
 }
 
-export function parseHeadingLines(text: string): ParsedHeading[] {
+export function parseHeadingCandidates(text: string): ParsedHeading[] {
   const lines = text.split(/\r?\n/);
   const formalHeadings: ParsedHeading[] = [];
   const structuredHeadings: ParsedHeading[] = [];
@@ -85,7 +86,8 @@ export function parseHeadingLines(text: string): ParsedHeading[] {
       formalHeadings.push({
         lineIndex: index,
         level: atx[1].length,
-        text: cleanHeading(atx[2])
+        text: cleanHeading(atx[2]),
+        source: "formal"
       });
       continue;
     }
@@ -95,7 +97,8 @@ export function parseHeadingLines(text: string): ParsedHeading[] {
       formalHeadings.push({
         lineIndex: index,
         level: underline[1][0] === "=" ? 1 : 2,
-        text: cleanHeading(line)
+        text: cleanHeading(line),
+        source: "formal"
       });
       continue;
     }
@@ -108,7 +111,8 @@ export function parseHeadingLines(text: string): ParsedHeading[] {
       target.push({
         lineIndex: index,
         level: 2,
-        text: bold
+        text: bold,
+        source: target === structuredHeadings ? "structured" : "bold"
       });
       continue;
     }
@@ -118,26 +122,37 @@ export function parseHeadingLines(text: string): ParsedHeading[] {
       structuredHeadings.push({
         lineIndex: index,
         level: 2,
-        text: structured
+        text: structured,
+        source: "structured"
       });
     }
   }
 
-  const useBoldFallback =
-    formalHeadings.length === 0 && boldCandidates.length >= 2;
   return [
     ...formalHeadings,
     ...structuredHeadings,
-    ...(useBoldFallback ? boldCandidates : [])
+    ...boldCandidates
   ]
     .filter((heading) => heading.text)
     .sort((left, right) => left.lineIndex - right.lineIndex);
 }
 
+export function parseHeadingLines(text: string): ParsedHeading[] {
+  const candidates = parseHeadingCandidates(text);
+  const formal = candidates.filter((heading) => heading.source === "formal");
+  if (formal.length) return formal;
+  const structured = candidates.filter(
+    (heading) => heading.source === "structured"
+  );
+  if (structured.length) return structured;
+  const bold = candidates.filter((heading) => heading.source === "bold");
+  return bold.length >= 2 ? bold : [];
+}
+
 export function addHeadingAnchors(text: string, prefix: string) {
   const lines = text.split(/\r?\n/);
   const headings = new Map(
-    parseHeadingLines(text).map((heading, index) => [
+    parseHeadingCandidates(text).map((heading, index) => [
       heading.lineIndex,
       `${prefix}-${index}`
     ])

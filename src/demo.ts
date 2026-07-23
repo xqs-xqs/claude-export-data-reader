@@ -95,6 +95,37 @@ export const DEMO_LIBRARY: Library = {
               file_name: "project-document.pdf"
             }
           ]
+        },
+        {
+          uuid: "demo-human-followup",
+          sender: "human",
+          created_at: "2026-07-23T08:04:00Z",
+          parent_message_uuid: "demo-assistant",
+          text:
+            "右侧导航怎样区分每一轮问题与回答？左右侧栏能否调整宽度？",
+          content: [
+            {
+              type: "text",
+              text:
+                "1. 右侧导航怎样区分每一轮问题与回答，并避免子标题过多？\n" +
+                "2. 左右侧栏能否根据阅读习惯调整宽度？"
+            }
+          ]
+        },
+        {
+          uuid: "demo-assistant-followup",
+          sender: "assistant",
+          created_at: "2026-07-23T08:04:03Z",
+          parent_message_uuid: "demo-human-followup",
+          content: [
+            {
+              type: "text",
+              text:
+                "## 对话分组\n\n问题作为一级入口，只展开当前一轮的回答标题。\n\n" +
+                "### 内部实现细节\n\n这个三级标题不会进入右侧导航。\n\n" +
+                "## 侧栏伸缩\n\n拖动左右分隔线即可调整宽度，设置会保存在本机。"
+            }
+          ]
         }
       ]
     },

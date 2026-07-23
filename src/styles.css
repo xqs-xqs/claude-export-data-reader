@@ -24,6 +24,8 @@
   --chat-font-size: 16px;
   --sidebar-font-size: 13px;
   --outline-font-size: 13px;
+  --sidebar-width: 282px;
+  --outline-width: 248px;
   --shadow: 0 8px 28px rgba(39, 34, 26, 0.06);
 }
 
@@ -77,7 +79,9 @@ button {
   position: fixed;
   inset: 0;
   display: grid;
-  grid-template-columns: 282px minmax(560px, 1fr) 248px;
+  grid-template-columns:
+    var(--sidebar-width) 7px minmax(560px, 1fr) 7px
+    var(--outline-width);
   grid-template-rows: minmax(0, 1fr);
   width: 100%;
   height: 100%;
@@ -90,11 +94,11 @@ button {
 }
 
 .app-shell.sidebar-closed {
-  grid-template-columns: minmax(560px, 1fr) 248px;
+  grid-template-columns: minmax(560px, 1fr) 7px var(--outline-width);
 }
 
 .app-shell.outline-closed {
-  grid-template-columns: 282px minmax(560px, 1fr);
+  grid-template-columns: var(--sidebar-width) 7px minmax(560px, 1fr);
 }
 
 .app-shell.sidebar-closed.outline-closed {
@@ -107,7 +111,61 @@ button {
   flex-direction: column;
   padding: 15px 12px 12px;
   background: var(--panel);
-  border-right: 1px solid var(--line);
+}
+
+.panel-resizer {
+  position: relative;
+  z-index: 8;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: var(--page);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.panel-resizer-sidebar {
+  background: linear-gradient(
+    to right,
+    var(--panel) 0,
+    var(--panel) 50%,
+    var(--page) 50%,
+    var(--page) 100%
+  );
+}
+
+.panel-resizer::before {
+  position: absolute;
+  inset: 0 auto 0 3px;
+  width: 1px;
+  background: var(--line);
+  content: "";
+  transition:
+    width 120ms ease,
+    background 120ms ease;
+}
+
+.panel-resizer:hover::before,
+.panel-resizer:focus-visible::before,
+.panel-resizer.is-resizing::before {
+  width: 2px;
+  background: var(--accent);
+}
+
+.panel-resizer:focus-visible::after {
+  position: absolute;
+  inset: 3px 1px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 4px;
+  content: "";
+}
+
+html.is-resizing,
+html.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 .brand {
@@ -844,7 +902,6 @@ button {
   padding: 70px 13px 24px 12px;
   overflow-y: scroll;
   background: var(--page);
-  border-left: 1px solid var(--line);
 }
 
 .outline-header {
@@ -893,6 +950,9 @@ button {
 
 .outline nav button {
   position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
   width: 100%;
   overflow: hidden;
   padding-top: 6px;
@@ -910,6 +970,65 @@ button {
   cursor: pointer;
 }
 
+.outline nav button.outline-question {
+  min-height: 34px;
+  margin-top: 9px;
+  padding: 7px 8px;
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.outline nav button.outline-question:first-child {
+  margin-top: 0;
+}
+
+.outline-question-index {
+  display: grid;
+  flex: 0 0 21px;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 7px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: calc(var(--outline-font-size) - 2px);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.outline-question.is-group-open .outline-question-index {
+  color: #fff9f2;
+  background: var(--accent);
+}
+
+.outline-entry-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline-question .outline-entry-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.outline nav button.outline-answer {
+  padding-left: 36px;
+}
+
+.outline-answer::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 20px;
+  width: 1px;
+  background: var(--line);
+  content: "";
+}
+
 .outline nav button:hover {
   color: var(--text);
   background: color-mix(in srgb, var(--panel-hover) 55%, transparent);
@@ -918,6 +1037,10 @@ button {
 .outline nav button.is-active {
   color: var(--text);
   font-weight: 600;
+}
+
+.outline nav button.outline-question.is-active {
+  background: color-mix(in srgb, var(--accent-soft) 44%, transparent);
 }
 
 .outline nav button.is-active::before {
@@ -929,6 +1052,11 @@ button {
   border-radius: 2px;
   background: var(--accent);
   content: "";
+}
+
+.outline nav button.outline-answer.is-active::before {
+  left: 20px;
+  z-index: 1;
 }
 
 .outline p {
@@ -987,15 +1115,17 @@ button {
 
 @media (max-width: 1180px) {
   .app-shell {
-    grid-template-columns: 240px minmax(480px, 1fr) 220px;
+    grid-template-columns:
+      var(--sidebar-width) 7px minmax(480px, 1fr) 7px
+      var(--outline-width);
   }
 
   .app-shell.sidebar-closed {
-    grid-template-columns: minmax(480px, 1fr) 220px;
+    grid-template-columns: minmax(480px, 1fr) 7px var(--outline-width);
   }
 
   .app-shell.outline-closed {
-    grid-template-columns: 240px minmax(480px, 1fr);
+    grid-template-columns: var(--sidebar-width) 7px minmax(480px, 1fr);
   }
 
   .app-shell.sidebar-closed.outline-closed {

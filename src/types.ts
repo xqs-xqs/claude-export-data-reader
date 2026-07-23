@@ -102,6 +102,9 @@ export interface HeadingEntry {
   id: string;
   level: number;
   text: string;
+  fullText?: string;
+  kind: "question" | "answer";
+  questionNumber?: number;
 }
 
 export interface ImportResult {
@@ -121,4 +124,3 @@ declare global {
     };
   }
 }
-

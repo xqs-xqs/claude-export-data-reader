@@ -111,8 +111,28 @@ function extensionOf(name?: string) {
 export default function MessageView({ message }: { message: Message }) {
   const blocks = message.content || [];
   const visibleBlockCount = blocks.filter(
-    (block) => !block.hidden && !block.hidden_in_chat
+    (block) =>
+      !block.hidden &&
+      !block.hidden_in_chat &&
+      ((block.type === "text" && Boolean(block.text)) ||
+        block.type === "thinking" ||
+        block.type === "tool_use" ||
+        block.type === "tool_result")
   ).length;
+  const hasFallbackText = blocks.length === 0 && Boolean(message.text);
+  const hasVisibleFiles = (message.files || []).length > 0;
+  const hasVisibleAttachments = (message.attachments || []).some(
+    (attachment) => attachment.extracted_content
+  );
+
+  if (
+    visibleBlockCount === 0 &&
+    !hasFallbackText &&
+    !hasVisibleFiles &&
+    !hasVisibleAttachments
+  ) {
+    return null;
+  }
 
   return (
     <article className={`message message-${message.sender}`} id={`message-${message.uuid}`}>
@@ -127,7 +147,7 @@ export default function MessageView({ message }: { message: Message }) {
                 blockIndex={index}
               />
             ))
-          : message.text && (
+          : hasFallbackText && message.text && (
               <MarkdownBlock
                 text={message.text}
                 anchorPrefix={`heading-${message.uuid}-fallback`}
