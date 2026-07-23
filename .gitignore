@@ -1,0 +1,32 @@
+node_modules/
+.npm-cache/
+dist/
+release/
+out/
+.vite/
+coverage/
+
+# Local application state and databases
+reader-data.json
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Private exports and extracted user data
+*.zip
+imports/
+exports/
+attachments/
+
+# Secrets and local settings
+.env
+.env.*
+!.env.example
+*.log
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

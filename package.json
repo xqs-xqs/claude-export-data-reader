@@ -1,0 +1,35 @@
+{
+  "name": "claude-export-data-reader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Can't access chats from a suspended Claude account? Claude Export Data Reader lets you privately import and browse exported conversation archives on your desktop.",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "dev:web": "vite --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "dompurify": "^3.2.6",
+    "jszip": "^3.10.1",
+    "marked": "^15.0.12",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^9.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^37.2.3",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.5",
+    "wait-on": "^8.0.3"
+  }
+}
+
