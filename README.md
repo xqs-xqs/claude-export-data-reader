@@ -39,6 +39,18 @@ Build the web assets:
 npm run build
 ```
 
+Windows review:
+
+1. Double-click `review-windows.cmd`, or run `npm.cmd start` after building.
+2. In the desktop window, click **Import archive**.
+3. Select a Claude export ZIP and review the imported conversations.
+
+If Electron was installed while download scripts were disabled, run:
+
+```powershell
+npm.cmd rebuild electron
+```
+
 A packaged Windows installer will be added after the import and rendering workflows are validated against real exports.
 
 ## Use
@@ -94,6 +106,18 @@ npm run dev
 
 ```bash
 npm run build
+```
+
+Windows 审查：
+
+1. 双击项目根目录的 `review-windows.cmd`，或者构建后执行 `npm.cmd start`。
+2. 在桌面窗口中点击“导入数据”。
+3. 选择 Claude 导出 ZIP，然后检查导入后的会话。
+
+如果此前安装依赖时跳过了 Electron 下载，请执行：
+
+```powershell
+npm.cmd rebuild electron
 ```
 
 在真实导出数据完成导入和渲染验证后，项目会增加可直接安装的 Windows 安装包。
