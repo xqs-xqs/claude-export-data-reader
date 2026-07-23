@@ -66,6 +66,7 @@ export const DEMO_LIBRARY: Library = {
                 "### 安全边界\n\n原始 ZIP 保持只读，本地修订与手动分类单独保存。\n\n" +
                 "## 阅读体验\n\n正文支持 Markdown、代码、引用和工具卡片。\n\n" +
                 "```ts\nconst archive = await importArchive(filePath);\n```\n\n" +
+                "**阶段 5：补充检查**\n\n独立粗体标题也会出现在右侧目录中。\n\n" +
                 "## 后续导入\n\n新导出包可以继续添加，不会覆盖已经保存的原始版本。"
             },
             {

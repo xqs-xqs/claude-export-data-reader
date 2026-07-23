@@ -1,4 +1,5 @@
 import type { Conversation, HeadingEntry, Message } from "./types";
+import { parseHeadingLines } from "./headings";
 
 export function currentBranch(messages: Message[]): Message[] {
   if (messages.length < 2) return messages;
@@ -22,40 +23,15 @@ export function visibleMessages(conversation?: Conversation): Message[] {
   return currentBranch(conversation.chat_messages || []);
 }
 
-function cleanHeading(text: string) {
-  return text
-    .replace(/\[(.*?)\]\(.*?\)/g, "$1")
-    .replace(/[*_`~]/g, "")
-    .trim();
-}
-
 function headingsFromText(
   text: string,
   prefix: string
 ): HeadingEntry[] {
-  const headings: HeadingEntry[] = [];
-  let headingIndex = 0;
-  let fence: string | undefined;
-
-  for (const line of text.split(/\r?\n/)) {
-    const fenceMatch = /^\s*(```+|~~~+)/.exec(line);
-    if (fenceMatch) {
-      const marker = fenceMatch[1][0];
-      fence = fence === marker ? undefined : fence || marker;
-      continue;
-    }
-    if (fence) continue;
-
-    const match = /^(#{1,4})\s+(.+?)\s*#*$/.exec(line);
-    if (!match) continue;
-    headings.push({
-      id: `${prefix}-${headingIndex}`,
-      level: match[1].length,
-      text: cleanHeading(match[2])
-    });
-    headingIndex += 1;
-  }
-  return headings;
+  return parseHeadingLines(text).map((heading, index) => ({
+    id: `${prefix}-${index}`,
+    level: heading.level,
+    text: heading.text
+  }));
 }
 
 export function extractHeadings(messages: Message[]): HeadingEntry[] {

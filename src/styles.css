@@ -20,6 +20,7 @@
   --code: #efeee9;
   --scroll-thumb: rgba(76, 70, 61, 0.34);
   --scroll-thumb-hover: rgba(76, 70, 61, 0.56);
+  --scroll-track: rgba(76, 70, 61, 0.07);
   --chat-font-size: 16px;
   --sidebar-font-size: 13px;
   --outline-font-size: 13px;
@@ -43,6 +44,7 @@
   --code: #1d1c19;
   --scroll-thumb: rgba(220, 214, 202, 0.3);
   --scroll-thumb-hover: rgba(220, 214, 202, 0.5);
+  --scroll-track: rgba(220, 214, 202, 0.07);
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
 }
 
@@ -53,10 +55,13 @@
 html,
 body,
 #root {
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
   margin: 0;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 button,
@@ -69,11 +74,19 @@ button {
 }
 
 .app-shell {
+  position: fixed;
+  inset: 0;
   display: grid;
   grid-template-columns: 282px minmax(560px, 1fr) 248px;
+  grid-template-rows: minmax(0, 1fr);
   width: 100%;
   height: 100%;
+  overflow: hidden;
   background: var(--page);
+}
+
+.app-shell > * {
+  min-height: 0;
 }
 
 .app-shell.sidebar-closed {
@@ -292,6 +305,7 @@ button {
   position: relative;
   min-width: 0;
   height: 100%;
+  overflow: hidden;
   background: var(--page);
 }
 
@@ -436,37 +450,49 @@ button {
 .conversation-scroll {
   width: 100%;
   height: 100%;
+  min-height: 0;
   overflow-y: scroll;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
   scroll-behavior: smooth;
 }
 
 .conversation-list,
 .conversation-scroll,
 .outline {
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: var(--scroll-thumb) transparent;
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
 }
 
 .conversation-list::-webkit-scrollbar,
 .conversation-scroll::-webkit-scrollbar,
 .outline::-webkit-scrollbar {
-  width: 11px;
+  width: 12px;
 }
 
 .conversation-list::-webkit-scrollbar-track,
 .conversation-scroll::-webkit-scrollbar-track,
 .outline::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--scroll-track);
 }
 
 .conversation-list::-webkit-scrollbar-thumb,
 .conversation-scroll::-webkit-scrollbar-thumb,
 .outline::-webkit-scrollbar-thumb {
   min-height: 34px;
-  border: 3px solid transparent;
+  border: 2px solid transparent;
   border-radius: 999px;
   background: var(--scroll-thumb);
   background-clip: padding-box;
+}
+
+.conversation-list::-webkit-scrollbar-button,
+.conversation-scroll::-webkit-scrollbar-button,
+.outline::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .conversation-list::-webkit-scrollbar-thumb:hover,
@@ -580,8 +606,8 @@ button {
 
 .heading-anchor {
   display: block;
-  position: relative;
-  top: -76px;
+  height: 0;
+  scroll-margin-top: 76px;
   visibility: hidden;
 }
 

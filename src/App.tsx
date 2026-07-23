@@ -292,6 +292,8 @@ export default function App() {
       setActiveHeading(undefined);
       return;
     }
+    const scrollRoot =
+      document.querySelector<HTMLElement>(".conversation-scroll");
     const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries
@@ -299,7 +301,10 @@ export default function App() {
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
         if (visible[0]) setActiveHeading(visible[0].target.id);
       },
-      { rootMargin: "-12% 0px -75% 0px" }
+      {
+        root: scrollRoot,
+        rootMargin: "-12% 0px -75% 0px"
+      }
     );
     headings.forEach((heading) => {
       const element = document.getElementById(heading.id);
@@ -339,9 +344,17 @@ export default function App() {
   }
 
   function navigateToHeading(id: string) {
-    document.getElementById(id)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start"
+    const scroller = document.querySelector<HTMLElement>(".conversation-scroll");
+    const target = document.getElementById(id);
+    if (!scroller || !target || !scroller.contains(target)) return;
+    const targetTop =
+      scroller.scrollTop +
+      target.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top -
+      76;
+    scroller.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: "smooth"
     });
     setActiveHeading(id);
   }
