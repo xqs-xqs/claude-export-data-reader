@@ -18,6 +18,20 @@
   --accent-soft: #f1ded4;
   --human: #eeece5;
   --code: #efeee9;
+  --code-block: #f5f4ef;
+  --code-block-header: #ebeae4;
+  --code-block-text: #34312c;
+  --code-block-hover: #dfddd5;
+  --code-copy-success: #567b58;
+  --syntax-comment: #858079;
+  --syntax-keyword: #95587d;
+  --syntax-string: #4e7554;
+  --syntax-number: #a15f3f;
+  --syntax-title: #326f83;
+  --syntax-variable: #9a6a2f;
+  --syntax-meta: #735f9e;
+  --syntax-addition: #47734e;
+  --syntax-deletion: #a64e4e;
   --scroll-thumb: rgba(76, 70, 61, 0.34);
   --scroll-thumb-hover: rgba(76, 70, 61, 0.56);
   --scroll-track: rgba(76, 70, 61, 0.07);
@@ -44,6 +58,20 @@
   --accent-soft: #50362b;
   --human: #35332d;
   --code: #1d1c19;
+  --code-block: #1d1c19;
+  --code-block-header: #272621;
+  --code-block-text: #e9e6df;
+  --code-block-hover: #393731;
+  --code-copy-success: #8fc08e;
+  --syntax-comment: #99938a;
+  --syntax-keyword: #d8a0cc;
+  --syntax-string: #a8c99e;
+  --syntax-number: #e2a27c;
+  --syntax-title: #91c1d2;
+  --syntax-variable: #dbbd82;
+  --syntax-meta: #baacd8;
+  --syntax-addition: #8fc08e;
+  --syntax-deletion: #e08f8f;
   --scroll-thumb: rgba(220, 214, 202, 0.3);
   --scroll-thumb-hover: rgba(220, 214, 202, 0.5);
   --scroll-track: rgba(220, 214, 202, 0.07);
@@ -698,7 +726,7 @@ html.is-resizing * {
   color: var(--muted);
 }
 
-.markdown code {
+.markdown :not(pre) > code {
   padding: 0.16em 0.35em;
   border-radius: 5px;
   background: var(--code);
@@ -707,6 +735,7 @@ html.is-resizing * {
 }
 
 .markdown pre {
+  max-width: 100%;
   overflow: auto;
   padding: 17px;
   border: 1px solid var(--line);
@@ -717,8 +746,241 @@ html.is-resizing * {
 .markdown pre code {
   padding: 0;
   background: transparent;
-  font-size: 12.5px;
+  font-size: 0.84em;
   line-height: 1.55;
+}
+
+.code-block {
+  max-width: 100%;
+  min-width: 0;
+  margin: 1.05em 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--code-block);
+  box-shadow: 0 1px 1px rgba(39, 34, 26, 0.025);
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--code-block-header);
+  font-family:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Noto Sans SC", sans-serif;
+}
+
+.code-block-language {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-copy-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11.5px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.code-copy-button:hover {
+  color: var(--text);
+  background: var(--code-block-hover);
+}
+
+.code-copy-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
+  outline-offset: 1px;
+}
+
+.code-copy-button.is-copied {
+  color: var(--code-copy-success);
+}
+
+.code-copy-button.is-copy-error {
+  color: var(--syntax-deletion);
+}
+
+.code-copy-icon {
+  position: relative;
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+.code-copy-icon::before,
+.code-copy-icon::after {
+  position: absolute;
+  width: 7px;
+  height: 8px;
+  border: 1.25px solid currentColor;
+  border-radius: 2px;
+  content: "";
+}
+
+.code-copy-icon::before {
+  top: 1px;
+  left: 4px;
+}
+
+.code-copy-icon::after {
+  top: 4px;
+  left: 1px;
+  background: var(--code-block-header);
+}
+
+.code-copy-button.is-copied .code-copy-icon::before {
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 5px;
+  border: 0;
+  border-bottom: 1.6px solid currentColor;
+  border-left: 1.6px solid currentColor;
+  border-radius: 0;
+  transform: rotate(-45deg);
+}
+
+.code-copy-button.is-copied .code-copy-icon::after {
+  display: none;
+}
+
+.code-block pre {
+  max-width: 100%;
+  margin: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 16px 18px 17px;
+  border: 0;
+  border-radius: 0;
+  color: var(--code-block-text);
+  background: var(--code-block);
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+  scrollbar-width: thin;
+  tab-size: 2;
+}
+
+.code-block pre::-webkit-scrollbar {
+  height: 10px;
+}
+
+.code-block pre::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+}
+
+.code-block pre::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+  background-clip: padding-box;
+}
+
+.code-block pre::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: padding-box;
+}
+
+.code-block pre code {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font-family:
+    "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.84em;
+  font-variant-ligatures: none;
+  line-height: 1.58;
+  white-space: pre;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-link {
+  color: var(--syntax-keyword);
+}
+
+.hljs-string,
+.hljs-attr,
+.hljs-template-tag,
+.hljs-template-variable {
+  color: var(--syntax-string);
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet {
+  color: var(--syntax-number);
+}
+
+.hljs-title,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--syntax-title);
+}
+
+.hljs-built_in,
+.hljs-type,
+.hljs-class .hljs-title {
+  color: var(--syntax-variable);
+}
+
+.hljs-variable,
+.hljs-params,
+.hljs-property {
+  color: var(--syntax-variable);
+}
+
+.hljs-meta,
+.hljs-doctag {
+  color: var(--syntax-meta);
+}
+
+.hljs-addition {
+  color: var(--syntax-addition);
+}
+
+.hljs-deletion {
+  color: var(--syntax-deletion);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
 }
 
 .markdown table {

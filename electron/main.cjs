@@ -1,4 +1,11 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu
+} = require("electron");
 const { readFile, writeFile, mkdir } = require("node:fs/promises");
 const path = require("node:path");
 const { mergeByKey, parseArchive } = require("./archive.cjs");
@@ -120,6 +127,13 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   ipcMain.handle("archive:import", importArchive);
   ipcMain.handle("library:get", loadLibrary);
+  ipcMain.handle("clipboard:write-text", (_event, text) => {
+    if (typeof text !== "string") {
+      throw new TypeError("Clipboard content must be text.");
+    }
+    clipboard.writeText(text);
+    return true;
+  });
   ipcMain.handle("library:clear", async () => {
     const answer = await dialog.showMessageBox(mainWindow, {
       type: "warning",

@@ -121,6 +121,7 @@ declare global {
       importArchive(): Promise<ImportResult>;
       getLibrary(): Promise<Library>;
       clearLibrary(): Promise<{ canceled: boolean; library?: Library }>;
+      copyText(text: string): Promise<boolean>;
     };
   }
 }
