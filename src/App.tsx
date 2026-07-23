@@ -58,7 +58,7 @@ function Sidebar({
       <div className="brand">
         <div className="brand-mark">C</div>
         <div>
-          <strong>Claude 数据阅读器</strong>
+          <strong>Claude 导出数据阅读器</strong>
           <span>本地只读归档</span>
         </div>
       </div>
@@ -304,7 +304,7 @@ export default function App() {
             <MenuIcon />
           </button>
           <div className="topbar-title">
-            {selectedConversation?.name || "Claude 数据阅读器"}
+            {selectedConversation?.name || "Claude 导出数据阅读器"}
           </div>
           <div className="topbar-actions">
             <button
@@ -352,7 +352,7 @@ export default function App() {
               <div className="empty-mark">C</div>
               <h1>重新打开曾经的对话</h1>
               <p>
-                导入 Claude 数据导出 ZIP。文件只在这台电脑上处理，不会上传。
+                选择 Claude Export ZIP，文件仅在本机处理，不会上传。
               </p>
               <button className="primary-action large" onClick={importArchive}>
                 <ImportIcon />

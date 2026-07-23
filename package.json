@@ -1,5 +1,6 @@
 {
   "name": "claude-export-data-reader",
+  "productName": "Claude 导出数据阅读器",
   "version": "0.1.0",
   "private": true,
   "description": "Can't access chats from a suspended Claude account? Claude Export Data Reader lets you privately import and browse exported conversation archives on your desktop.",
@@ -32,4 +33,3 @@
     "wait-on": "^8.0.3"
   }
 }
-

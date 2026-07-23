@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu } = require("electron");
 const { readFile, writeFile, mkdir } = require("node:fs/promises");
 const path = require("node:path");
 const { mergeByKey, parseArchive } = require("./archive.cjs");
@@ -39,7 +39,7 @@ async function saveLibrary(library) {
 
 async function importArchive() {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: "选择 Claude 数据导出 ZIP",
+    title: "选择 Claude Export ZIP",
     properties: ["openFile"],
     filters: [{ name: "ZIP archive", extensions: ["zip"] }]
   });
@@ -97,7 +97,8 @@ function createWindow() {
     minWidth: 980,
     minHeight: 680,
     backgroundColor: "#f7f6f2",
-    title: "Claude 数据阅读器",
+    title: "Claude 导出数据阅读器",
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -105,6 +106,7 @@ function createWindow() {
       sandbox: true
     }
   });
+  mainWindow.setMenuBarVisibility(false);
 
   const developmentUrl = process.env.VITE_DEV_SERVER_URL;
   if (developmentUrl) {
@@ -115,6 +117,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   ipcMain.handle("archive:import", importArchive);
   ipcMain.handle("library:get", loadLibrary);
   ipcMain.handle("library:clear", async () => {
