@@ -12,7 +12,18 @@ interface Props {
   searchQuery?: string;
 }
 
-function highlightSearchMatches(html: string, query?: string) {
+interface SearchHighlightRange {
+  end: number;
+  head: boolean;
+  matchId: string;
+  start: number;
+}
+
+function highlightSearchMatches(
+  html: string,
+  query: string | undefined,
+  matchPrefix: string
+) {
   const normalizedQuery = normalizeSearchText(query || "");
   if (!normalizedQuery) return html;
 
@@ -45,7 +56,8 @@ function highlightSearchMatches(html: string, query?: string) {
     groups.set(block, nodes);
   }
 
-  const rangesByNode = new Map<Text, Array<{ end: number; start: number }>>();
+  const rangesByNode = new Map<Text, SearchHighlightRange[]>();
+  let matchSequence = 0;
 
   for (const nodes of groups.values()) {
     const positions: Array<{
@@ -101,6 +113,8 @@ function highlightSearchMatches(html: string, query?: string) {
     let matchIndex = normalizedText.indexOf(normalizedQuery);
     while (matchIndex >= 0) {
       const matchEnd = matchIndex + normalizedQuery.length;
+      const matchId = `${matchPrefix}-${matchSequence}`;
+      matchSequence += 1;
       const segments = new Map<Text, { end: number; start: number }>();
       for (let index = matchIndex; index < matchEnd; index += 1) {
         const position = positions[index];
@@ -117,10 +131,16 @@ function highlightSearchMatches(html: string, query?: string) {
         }
       }
 
+      let firstSegment = true;
       for (const [node, segment] of segments) {
         const ranges = rangesByNode.get(node) || [];
-        ranges.push(segment);
+        ranges.push({
+          ...segment,
+          head: firstSegment,
+          matchId
+        });
         rangesByNode.set(node, ranges);
+        firstSegment = false;
       }
       matchIndex = normalizedText.indexOf(normalizedQuery, matchEnd);
     }
@@ -128,11 +148,16 @@ function highlightSearchMatches(html: string, query?: string) {
 
   for (const [node, ranges] of rangesByNode) {
     ranges.sort((left, right) => left.start - right.start);
-    const mergedRanges: Array<{ end: number; start: number }> = [];
+    const mergedRanges: SearchHighlightRange[] = [];
     for (const range of ranges) {
       const previous = mergedRanges.at(-1);
-      if (previous && range.start <= previous.end) {
+      if (
+        previous &&
+        previous.matchId === range.matchId &&
+        range.start <= previous.end
+      ) {
         previous.end = Math.max(previous.end, range.end);
+        previous.head ||= range.head;
       } else {
         mergedRanges.push({ ...range });
       }
@@ -147,6 +172,8 @@ function highlightSearchMatches(html: string, query?: string) {
       const mark = document.createElement("mark");
       mark.className = "search-highlight";
       mark.dataset.searchMatch = "true";
+      mark.dataset.searchMatchId = range.matchId;
+      if (range.head) mark.dataset.searchMatchHead = "true";
       mark.textContent = node.data.slice(range.start, range.end);
       fragment.append(mark);
       cursor = range.end;
@@ -259,9 +286,19 @@ export default function MarkdownBlock({
 
     return {
       codeTexts,
-      html: highlightSearchMatches(html, searchQuery)
+      html
     };
-  }, [anchorPrefix, searchQuery, text]);
+  }, [anchorPrefix, text]);
+
+  const highlightedHtml = useMemo(
+    () =>
+      highlightSearchMatches(
+        renderedMarkdown.html,
+        searchQuery,
+        anchorPrefix
+      ),
+    [anchorPrefix, renderedMarkdown.html, searchQuery]
+  );
 
   const handleClick = async (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target;
@@ -296,7 +333,7 @@ export default function MarkdownBlock({
     <div
       className="markdown"
       onClick={handleClick}
-      dangerouslySetInnerHTML={{ __html: renderedMarkdown.html }}
+      dangerouslySetInnerHTML={{ __html: highlightedHtml }}
     />
   );
 }
