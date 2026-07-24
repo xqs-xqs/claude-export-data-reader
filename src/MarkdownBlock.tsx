@@ -4,10 +4,158 @@ import { Marked, Renderer } from "marked";
 import { addHeadingAnchors } from "./headings";
 import { highlightCode } from "./codeHighlight";
 import { protectMathInMarkdown, renderMathPlaceholders } from "./math";
+import { normalizeSearchText } from "./search";
 
 interface Props {
   text: string;
   anchorPrefix: string;
+  searchQuery?: string;
+}
+
+function highlightSearchMatches(html: string, query?: string) {
+  const normalizedQuery = normalizeSearchText(query || "");
+  if (!normalizedQuery) return html;
+
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const walker = document.createTreeWalker(
+    template.content,
+    NodeFilter.SHOW_TEXT
+  );
+  const groups = new Map<Element, Text[]>();
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    const parent = node.parentElement;
+    if (
+      !node.data ||
+      !parent ||
+      parent.closest(
+        "button, .code-block-header, .heading-anchor, .katex, [aria-hidden='true']"
+      )
+    ) {
+      continue;
+    }
+    const block =
+      parent.closest(
+        "p, li, h1, h2, h3, h4, h5, h6, td, th, pre, figcaption"
+      ) || parent;
+    const nodes = groups.get(block) || [];
+    nodes.push(node);
+    groups.set(block, nodes);
+  }
+
+  const rangesByNode = new Map<Text, Array<{ end: number; start: number }>>();
+
+  for (const nodes of groups.values()) {
+    const positions: Array<{
+      end: number;
+      node: Text;
+      start: number;
+    }> = [];
+    let normalizedText = "";
+    let previousWasWhitespace = false;
+    let previousNode: Text | undefined;
+
+    for (const node of nodes) {
+      if (previousNode && !previousWasWhitespace) {
+        const boundary = document.createRange();
+        boundary.setStartAfter(previousNode);
+        boundary.setEndBefore(node);
+        if (boundary.cloneContents().querySelector("br")) {
+          normalizedText += " ";
+          positions.push({ node, start: 0, end: 0 });
+          previousWasWhitespace = true;
+        }
+      }
+      for (let offset = 0; offset < node.data.length; ) {
+        const codePoint = node.data.codePointAt(offset);
+        if (codePoint === undefined) break;
+        const character = String.fromCodePoint(codePoint);
+        const end = offset + character.length;
+        if (/\s/u.test(character)) {
+          if (!previousWasWhitespace) {
+            normalizedText += " ";
+            positions.push({ node, start: offset, end });
+          }
+          previousWasWhitespace = true;
+          offset = end;
+          continue;
+        }
+
+        const normalizedCharacter = character.toLocaleLowerCase();
+        normalizedText += normalizedCharacter;
+        for (
+          let characterIndex = 0;
+          characterIndex < normalizedCharacter.length;
+          characterIndex += 1
+        ) {
+          positions.push({ node, start: offset, end });
+        }
+        previousWasWhitespace = false;
+        offset = end;
+      }
+      previousNode = node;
+    }
+
+    let matchIndex = normalizedText.indexOf(normalizedQuery);
+    while (matchIndex >= 0) {
+      const matchEnd = matchIndex + normalizedQuery.length;
+      const segments = new Map<Text, { end: number; start: number }>();
+      for (let index = matchIndex; index < matchEnd; index += 1) {
+        const position = positions[index];
+        if (!position) continue;
+        const segment = segments.get(position.node);
+        if (segment) {
+          segment.start = Math.min(segment.start, position.start);
+          segment.end = Math.max(segment.end, position.end);
+        } else {
+          segments.set(position.node, {
+            start: position.start,
+            end: position.end
+          });
+        }
+      }
+
+      for (const [node, segment] of segments) {
+        const ranges = rangesByNode.get(node) || [];
+        ranges.push(segment);
+        rangesByNode.set(node, ranges);
+      }
+      matchIndex = normalizedText.indexOf(normalizedQuery, matchEnd);
+    }
+  }
+
+  for (const [node, ranges] of rangesByNode) {
+    ranges.sort((left, right) => left.start - right.start);
+    const mergedRanges: Array<{ end: number; start: number }> = [];
+    for (const range of ranges) {
+      const previous = mergedRanges.at(-1);
+      if (previous && range.start <= previous.end) {
+        previous.end = Math.max(previous.end, range.end);
+      } else {
+        mergedRanges.push({ ...range });
+      }
+    }
+
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    for (const range of mergedRanges) {
+      if (range.start > cursor) {
+        fragment.append(node.data.slice(cursor, range.start));
+      }
+      const mark = document.createElement("mark");
+      mark.className = "search-highlight";
+      mark.dataset.searchMatch = "true";
+      mark.textContent = node.data.slice(range.start, range.end);
+      fragment.append(mark);
+      cursor = range.end;
+    }
+    if (cursor < node.data.length) fragment.append(node.data.slice(cursor));
+    node.replaceWith(fragment);
+  }
+
+  return template.innerHTML;
 }
 
 async function writeClipboard(text: string) {
@@ -45,7 +193,11 @@ async function writeClipboard(text: string) {
   }
 }
 
-export default function MarkdownBlock({ text, anchorPrefix }: Props) {
+export default function MarkdownBlock({
+  text,
+  anchorPrefix,
+  searchQuery
+}: Props) {
   const renderedMarkdown = useMemo(() => {
     const codeTexts: string[] = [];
     const renderer = new Renderer();
@@ -105,8 +257,11 @@ export default function MarkdownBlock({ text, anchorPrefix }: Props) {
       ADD_TAGS: ["span", "figure", "header", "button"]
     });
 
-    return { codeTexts, html };
-  }, [anchorPrefix, text]);
+    return {
+      codeTexts,
+      html: highlightSearchMatches(html, searchQuery)
+    };
+  }, [anchorPrefix, searchQuery, text]);
 
   const handleClick = async (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target;

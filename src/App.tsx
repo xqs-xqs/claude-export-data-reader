@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -8,6 +13,13 @@ import type { Conversation, HeadingEntry, Library } from "./types";
 import { dateLabel, extractHeadings, visibleMessages } from "./conversation";
 import MessageView from "./MessageView";
 import { DEMO_LIBRARY } from "./demo";
+import {
+  buildConversationSearchIndex,
+  conversationDisplayTitle,
+  findSearchMatchRanges,
+  normalizeSearchText,
+  searchConversationIndex
+} from "./search";
 import {
   ChevronIcon,
   ImportIcon,
@@ -47,6 +59,13 @@ interface ActiveResize {
   startWidth: number;
 }
 
+interface SearchTarget {
+  conversationKey: string;
+  messageId: string;
+  query: string;
+  sequence: number;
+}
+
 const DEFAULT_FONT_SETTINGS: FontSettings = {
   chat: 16,
   sidebar: 13,
@@ -70,6 +89,52 @@ function clamp(value: unknown, minimum: number, maximum: number, fallback: numbe
   return Number.isFinite(numeric)
     ? Math.min(maximum, Math.max(minimum, numeric))
     : fallback;
+}
+
+function conversationKey(conversation: Conversation) {
+  return `${conversation.account_uuid}:${conversation.uuid}`;
+}
+
+function HighlightedSearchText({
+  text,
+  query
+}: {
+  text: string;
+  query: string;
+}) {
+  const ranges = findSearchMatchRanges(text, query);
+  if (!ranges.length) return text;
+
+  const parts: Array<{ highlighted: boolean; text: string }> = [];
+  let cursor = 0;
+
+  for (const range of ranges) {
+    if (range.start > cursor) {
+      parts.push({
+        highlighted: false,
+        text: text.slice(cursor, range.start)
+      });
+    }
+    parts.push({
+      highlighted: true,
+      text: text.slice(range.start, range.end)
+    });
+    cursor = range.end;
+  }
+
+  if (cursor < text.length) {
+    parts.push({ highlighted: false, text: text.slice(cursor) });
+  }
+
+  return parts.map((part, index) =>
+    part.highlighted ? (
+      <mark className="search-result-highlight" key={index}>
+        {part.text}
+      </mark>
+    ) : (
+      part.text
+    )
+  );
 }
 
 function initialPanelWidths(): PanelWidths {
@@ -162,32 +227,42 @@ function initialFontSettings(): FontSettings {
 
 function Sidebar({
   library,
+  query,
   selectedKey,
+  selectedMessageId,
   onSelect,
+  onQueryChange,
+  onSearchSelect,
   onImport,
   importing
 }: {
   library: Library;
+  query: string;
   selectedKey?: string;
+  selectedMessageId?: string;
   onSelect: (conversation: Conversation) => void;
+  onQueryChange: (query: string) => void;
+  onSearchSelect: (
+    conversation: Conversation,
+    messageId: string,
+    query: string
+  ) => void;
   onImport: () => void;
   importing: boolean;
 }) {
-  const [query, setQuery] = useState("");
-  const conversations = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    return [...library.conversations]
-      .filter((conversation) =>
-        normalized
-          ? (conversation.name || "").toLocaleLowerCase().includes(normalized)
-          : true
-      )
-      .sort(
-        (a, b) =>
-          new Date(b.updated_at || b.created_at || 0).getTime() -
-          new Date(a.updated_at || a.created_at || 0).getTime()
-      );
-  }, [library.conversations, query]);
+  const searchIndex = useMemo(
+    () => buildConversationSearchIndex(library.conversations),
+    [library.conversations]
+  );
+  const conversations = useMemo(
+    () => searchIndex.map((entry) => entry.conversation),
+    [searchIndex]
+  );
+  const searchResults = useMemo(
+    () => searchConversationIndex(searchIndex, query),
+    [query, searchIndex]
+  );
+  const searching = Boolean(normalizeSearchText(query));
 
   return (
     <aside className="sidebar" id="conversation-sidebar">
@@ -208,36 +283,122 @@ function Sidebar({
         <SearchIcon />
         <input
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="搜索聊天"
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="搜索标题和消息"
+          aria-label="搜索对话标题和消息全文"
         />
       </label>
 
       <div className="sidebar-section-title">
-        <span>最近聊天</span>
-        <span>{conversations.length}</span>
+        <span>{searching ? "搜索结果" : "最近聊天"}</span>
+        <span>
+          {searching ? searchResults.totalMatches : conversations.length}
+        </span>
       </div>
 
-      <nav className="conversation-list">
-        {conversations.map((conversation) => (
-          <button
-            key={`${conversation.account_uuid}:${conversation.uuid}`}
-            className={
-              selectedKey === `${conversation.account_uuid}:${conversation.uuid}`
-                ? "is-active"
-                : ""
-            }
-            onClick={() => onSelect(conversation)}
-          >
-            <span className="conversation-title">
-              {conversation.name || "未命名会话"}
-            </span>
-            <span className="conversation-date">
-              {dateLabel(conversation.updated_at || conversation.created_at)}
-            </span>
-          </button>
-        ))}
-      </nav>
+      {searching ? (
+        <nav
+          className="conversation-list search-result-list"
+          aria-label="搜索结果"
+        >
+          {searchResults.groups.length ? (
+            searchResults.groups.map((group) => (
+              <section className="search-result-group" key={group.key}>
+                <button
+                  className={`search-result-conversation ${
+                    selectedKey === group.key && !selectedMessageId
+                      ? "is-active"
+                      : ""
+                  }`}
+                  onClick={() => onSelect(group.conversation)}
+                  title={conversationDisplayTitle(group.conversation)}
+                >
+                  <span className="conversation-title">
+                    <HighlightedSearchText
+                      text={conversationDisplayTitle(group.conversation)}
+                      query={query}
+                    />
+                  </span>
+                  <span className="search-result-conversation-meta">
+                    {group.titleMatch && (
+                      <span className="search-result-kind">标题</span>
+                    )}
+                    <span className="conversation-date">
+                      {dateLabel(
+                        group.conversation.updated_at ||
+                          group.conversation.created_at
+                      )}
+                    </span>
+                  </span>
+                </button>
+                {group.messageMatches.map(({ message, snippet }) => (
+                  <button
+                    className={`search-result-message ${
+                      selectedKey === group.key &&
+                      selectedMessageId === message.uuid
+                        ? "is-active"
+                        : ""
+                    }`}
+                    key={message.uuid}
+                    onClick={() =>
+                      onSearchSelect(
+                        group.conversation,
+                        message.uuid,
+                        query
+                      )
+                    }
+                    title={snippet}
+                  >
+                    <span className="search-result-message-meta">
+                      <span>
+                        {message.sender === "human" ? "你" : "Claude"}
+                      </span>
+                      <span>{dateLabel(message.created_at)}</span>
+                    </span>
+                    <span className="search-result-snippet">
+                      <HighlightedSearchText
+                        text={snippet}
+                        query={query}
+                      />
+                    </span>
+                  </button>
+                ))}
+              </section>
+            ))
+          ) : (
+            <div className="search-empty">
+              没有找到匹配的对话标题或消息。
+            </div>
+          )}
+          {searchResults.truncated && (
+            <div className="search-limit-note">
+              共 {searchResults.totalMatches} 条结果，当前显示{" "}
+              {searchResults.shownMatches} 条。
+            </div>
+          )}
+        </nav>
+      ) : (
+        <nav className="conversation-list" aria-label="最近聊天">
+          {conversations.map((conversation) => (
+            <button
+              key={conversationKey(conversation)}
+              className={
+                selectedKey === conversationKey(conversation)
+                  ? "is-active"
+                  : ""
+              }
+              onClick={() => onSelect(conversation)}
+            >
+              <span className="conversation-title">
+                {conversationDisplayTitle(conversation)}
+              </span>
+              <span className="conversation-date">
+                {dateLabel(conversation.updated_at || conversation.created_at)}
+              </span>
+            </button>
+          ))}
+        </nav>
+      )}
 
       <div className="account-card">
         <div className="avatar">
@@ -408,6 +569,9 @@ export default function App() {
   );
   const [fontMenuOpen, setFontMenuOpen] = useState(false);
   const [activeHeading, setActiveHeading] = useState<string>();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchTarget, setSearchTarget] = useState<SearchTarget>();
+  const searchSequence = useRef(0);
   const [importing, setImporting] = useState(false);
   const [notice, setNotice] = useState<string>();
   const effectivePanelWidths = useMemo(
@@ -533,6 +697,35 @@ export default function App() {
     return () => observer.disconnect();
   }, [headings, selectedKey]);
 
+  useEffect(() => {
+    if (!searchTarget || searchTarget.conversationKey !== selectedKey) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const scroller =
+        document.querySelector<HTMLElement>(".conversation-scroll");
+      const message = document.getElementById(
+        `message-${searchTarget.messageId}`
+      );
+      if (!scroller || !message || !scroller.contains(message)) return;
+
+      const target =
+        message.querySelector<HTMLElement>(".search-highlight") || message;
+      const targetTop =
+        scroller.scrollTop +
+        target.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top -
+        76;
+      scroller.scrollTo({
+        top: Math.max(0, targetTop),
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth"
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages, searchTarget, selectedKey]);
+
   async function importArchive() {
     if (!window.readerAPI) {
       setNotice("请在桌面应用中使用导入功能。");
@@ -545,6 +738,8 @@ export default function App() {
       if (result.canceled) return;
       if (result.library) {
         setLibrary(result.library);
+        setSearchQuery("");
+        setSearchTarget(undefined);
         setSelectedKey((current) => {
           if (current) return current;
           const first = result.library?.conversations[0];
@@ -561,6 +756,35 @@ export default function App() {
     } finally {
       setImporting(false);
     }
+  }
+
+  function selectConversation(conversation: Conversation) {
+    setSelectedKey(conversationKey(conversation));
+    setSearchTarget(undefined);
+    window.requestAnimationFrame(() => {
+      document.querySelector(".conversation-scroll")?.scrollTo({ top: 0 });
+    });
+  }
+
+  function updateSearchQuery(nextQuery: string) {
+    setSearchQuery(nextQuery);
+    setSearchTarget(undefined);
+  }
+
+  function selectSearchMessage(
+    conversation: Conversation,
+    messageId: string,
+    query: string
+  ) {
+    const nextConversationKey = conversationKey(conversation);
+    searchSequence.current += 1;
+    setSelectedKey(nextConversationKey);
+    setSearchTarget({
+      conversationKey: nextConversationKey,
+      messageId,
+      query: normalizeSearchText(query),
+      sequence: searchSequence.current
+    });
   }
 
   function panelMaximum(side: PanelSide) {
@@ -712,11 +936,12 @@ export default function App() {
       {sidebarOpen && (
         <Sidebar
           library={library}
+          query={searchQuery}
           selectedKey={selectedKey}
-          onSelect={(conversation) => {
-            setSelectedKey(`${conversation.account_uuid}:${conversation.uuid}`);
-            document.querySelector(".conversation-scroll")?.scrollTo({ top: 0 });
-          }}
+          selectedMessageId={searchTarget?.messageId}
+          onSelect={selectConversation}
+          onQueryChange={updateSearchQuery}
+          onSearchSelect={selectSearchMessage}
           onImport={importArchive}
           importing={importing}
         />
@@ -747,7 +972,9 @@ export default function App() {
             <MenuIcon />
           </button>
           <div className="topbar-title">
-            {selectedConversation?.name || "Claude 导出数据阅读器"}
+            {selectedConversation
+              ? conversationDisplayTitle(selectedConversation)
+              : "Claude 导出数据阅读器"}
           </div>
           <div className="topbar-actions">
             <button
@@ -809,11 +1036,12 @@ export default function App() {
             <button
               className={`icon-button outline-toggle ${outlineOpen ? "is-active" : ""}`}
               onClick={() => setOutlineOpen((value) => !value)}
-              aria-label="显示或隐藏对话导航"
-              title="对话导航（Ctrl + Shift + O）"
+              aria-label={outlineOpen ? "隐藏对话导航" : "显示对话导航"}
+              aria-controls="conversation-outline"
+              aria-expanded={outlineOpen}
+              title={`${outlineOpen ? "隐藏" : "显示"}对话导航（Ctrl + Shift + O）`}
             >
               <OutlineIcon />
-              <span>目录</span>
             </button>
           </div>
         </header>
@@ -828,10 +1056,20 @@ export default function App() {
           {selectedConversation ? (
             <div className="conversation">
               <div className="conversation-heading">
-                <h1>{selectedConversation.name || "未命名会话"}</h1>
+                <h1>{conversationDisplayTitle(selectedConversation)}</h1>
               </div>
               {messages.map((message) => (
-                <MessageView key={message.uuid} message={message} />
+                <MessageView
+                  key={message.uuid}
+                  message={message}
+                  highlightQuery={
+                    searchTarget &&
+                    searchTarget.conversationKey === selectedKey &&
+                    searchTarget.messageId === message.uuid
+                      ? searchTarget.query
+                      : undefined
+                  }
+                />
               ))}
               <footer className="archive-footer">
                 已到达归档末尾 · 原始记录保持只读

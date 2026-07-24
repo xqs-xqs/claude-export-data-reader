@@ -274,11 +274,13 @@ function ProcessGroup({
 function Content({
   message,
   block,
-  blockIndex
+  blockIndex,
+  searchQuery
 }: {
   message: Message;
   block: ContentBlock;
   blockIndex: number;
+  searchQuery?: string;
 }) {
   if (block.hidden || block.hidden_in_chat) return null;
   if (block.type === "text" && block.text) {
@@ -287,6 +289,7 @@ function Content({
         <MarkdownBlock
           text={block.text}
           anchorPrefix={`heading-${message.uuid}-${blockIndex}`}
+          searchQuery={searchQuery}
         />
         {(block.citations || []).length > 0 && (
           <div className="citations">
@@ -341,7 +344,13 @@ function FilePreviewCard({ file }: { file: MessageFilePreview }) {
   );
 }
 
-export default function MessageView({ message }: { message: Message }) {
+export default function MessageView({
+  message,
+  highlightQuery
+}: {
+  message: Message;
+  highlightQuery?: string;
+}) {
   const blocks = message.content || [];
   const contentParts = useMemo(() => groupContentBlocks(blocks), [blocks]);
   const filePreviews = useMemo(
@@ -377,7 +386,12 @@ export default function MessageView({ message }: { message: Message }) {
   }
 
   return (
-    <article className={`message message-${message.sender}`} id={`message-${message.uuid}`}>
+    <article
+      className={`message message-${message.sender} ${
+        highlightQuery ? "message-search-target" : ""
+      }`}
+      id={`message-${message.uuid}`}
+    >
       {message.sender === "human" && <div className="sender-label">你</div>}
       <div className="message-content">
         {visibleBlockCount > 0
@@ -394,6 +408,7 @@ export default function MessageView({ message }: { message: Message }) {
                   message={message}
                   block={part.item.block}
                   blockIndex={part.item.index}
+                  searchQuery={highlightQuery}
                 />
               )
             )
@@ -401,6 +416,7 @@ export default function MessageView({ message }: { message: Message }) {
               <MarkdownBlock
                 text={message.text}
                 anchorPrefix={`heading-${message.uuid}-fallback`}
+                searchQuery={highlightQuery}
               />
             )}
 
