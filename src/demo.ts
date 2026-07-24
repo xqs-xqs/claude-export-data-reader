@@ -119,6 +119,53 @@ export const DEMO_LIBRARY: Library = {
                 conversations: 107,
                 status: "verified"
               }
+            },
+            {
+              type: "tool_use",
+              id: "demo-present-files",
+              name: "present_files",
+              input: {
+                filepaths: ["/mnt/user-data/outputs/reader-report.docx"]
+              }
+            },
+            {
+              type: "tool_result",
+              tool_use_id: "demo-present-files",
+              name: "present_files",
+              content: [
+                {
+                  type: "local_resource",
+                  file_path: "/mnt/user-data/outputs/reader-report.docx",
+                  name: "reader report",
+                  mime_type:
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                  uuid: "demo-generated-docx"
+                }
+              ]
+            },
+            {
+              type: "tool_use",
+              id: "demo-hidden-present-files",
+              name: "present_files",
+              hidden_in_chat: true,
+              input: {
+                filepaths: ["/mnt/user-data/outputs/private-draft.zip"]
+              }
+            },
+            {
+              type: "tool_result",
+              tool_use_id: "demo-hidden-present-files",
+              name: "present_files",
+              hidden_in_chat: true,
+              content: [
+                {
+                  type: "local_resource",
+                  file_path: "/mnt/user-data/outputs/private-draft.zip",
+                  name: "private draft",
+                  mime_type: "application/zip",
+                  uuid: "demo-hidden-generated-file"
+                }
+              ]
             }
           ],
           files: [

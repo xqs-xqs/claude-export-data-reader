@@ -1,7 +1,12 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ContentBlock, Message } from "./types";
 import MarkdownBlock from "./MarkdownBlock";
 import { ChevronIcon, FileIcon } from "./icons";
+import {
+  buildMessageFilePreviews,
+  fileTypeLabel,
+  type MessageFilePreview
+} from "./messageFiles";
 
 function JsonPreview({ value }: { value: unknown }) {
   if (value === undefined || value === null) return null;
@@ -316,24 +321,51 @@ function Content({
   return null;
 }
 
-function extensionOf(name?: string) {
-  const match = name?.match(/\.([^.]+)$/);
-  return match?.[1]?.toUpperCase() || "FILE";
+function FilePreviewCard({ file }: { file: MessageFilePreview }) {
+  const description =
+    file.kind === "generated"
+      ? "Claude 生成文件 · 文件本体未包含在导出中"
+      : "原文件未随导出提供 · 合成预览";
+
+  return (
+    <div className="file-card">
+      <div className="file-preview">
+        <FileIcon />
+        <span>{fileTypeLabel(file)}</span>
+      </div>
+      <div className="file-meta">
+        <strong>{file.fileName || "未命名文件"}</strong>
+        <span>{description}</span>
+      </div>
+    </div>
+  );
 }
 
 export default function MessageView({ message }: { message: Message }) {
   const blocks = message.content || [];
-  const contentParts = groupContentBlocks(blocks);
+  const contentParts = useMemo(() => groupContentBlocks(blocks), [blocks]);
+  const filePreviews = useMemo(
+    () => buildMessageFilePreviews(message),
+    [message]
+  );
   const visibleBlockCount = contentParts.reduce(
     (count, part) =>
       count + (part.kind === "process" ? part.items.length : 1),
     0
   );
   const hasFallbackText = blocks.length === 0 && Boolean(message.text);
-  const hasVisibleFiles = (message.files || []).length > 0;
+  const hasVisibleFiles = filePreviews.length > 0;
   const hasVisibleAttachments = (message.attachments || []).some(
     (attachment) => attachment.extracted_content
   );
+  const fileGrid =
+    filePreviews.length > 0 ? (
+      <div className="file-grid">
+        {filePreviews.map((file) => (
+          <FilePreviewCard file={file} key={file.key} />
+        ))}
+      </div>
+    ) : null;
 
   if (
     visibleBlockCount === 0 &&
@@ -372,22 +404,7 @@ export default function MessageView({ message }: { message: Message }) {
               />
             )}
 
-        {(message.files || []).length > 0 && (
-          <div className="file-grid">
-            {message.files?.map((file, index) => (
-              <div className="file-card" key={file.file_uuid || `${file.file_name}-${index}`}>
-                <div className="file-preview">
-                  <FileIcon />
-                  <span>{extensionOf(file.file_name)}</span>
-                </div>
-                <div className="file-meta">
-                  <strong>{file.file_name || "未命名文件"}</strong>
-                  <span>原文件未随导出提供 · 合成预览</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {message.sender === "human" && fileGrid}
 
         {(message.attachments || []).map((attachment, index) =>
           attachment.extracted_content ? (
@@ -397,6 +414,8 @@ export default function MessageView({ message }: { message: Message }) {
             </details>
           ) : null
         )}
+
+        {message.sender === "assistant" && fileGrid}
       </div>
     </article>
   );
