@@ -3,6 +3,7 @@ import DOMPurify from "dompurify";
 import { Marked, Renderer } from "marked";
 import { addHeadingAnchors } from "./headings";
 import { highlightCode } from "./codeHighlight";
+import { protectMathInMarkdown, renderMathPlaceholders } from "./math";
 
 interface Props {
   text: string;
@@ -67,17 +68,29 @@ export default function MarkdownBlock({ text, anchorPrefix }: Props) {
       `;
     };
 
+    renderer.table = function (token) {
+      const table = Renderer.prototype.table.call(this, token);
+      return `<div class="table-scroll">${table}</div>`;
+    };
+
     const markdownParser = new Marked({
       gfm: true,
       breaks: true,
       renderer
     });
 
-    const rendered = markdownParser.parse(
+    const protectedMath = protectMathInMarkdown(
       addHeadingAnchors(text, anchorPrefix)
+    );
+    const rendered = markdownParser.parse(
+      protectedMath.markdown
     ) as string;
+    const renderedWithMath = renderMathPlaceholders(
+      rendered,
+      protectedMath.formulas
+    );
 
-    const html = DOMPurify.sanitize(rendered, {
+    const html = DOMPurify.sanitize(renderedWithMath, {
       ADD_ATTR: [
         "target",
         "rel",

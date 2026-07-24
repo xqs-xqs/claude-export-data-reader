@@ -59,13 +59,45 @@ export const DEMO_LIBRARY: Library = {
               thinking_hidden: false
             },
             {
+              type: "thinking",
+              thinking: "DEMO_HIDDEN_PROCESS_SENTINEL",
+              hidden_in_chat: true
+            },
+            {
+              type: "tool_use",
+              id: "demo-analysis-tool",
+              name: "inspect_schema",
+              integration_name: "File Creation",
+              input: {
+                scope: "conversation-content"
+              }
+            },
+            {
+              type: "tool_result",
+              tool_use_id: "demo-analysis-tool",
+              integration_name: "File Creation",
+              content: {
+                status: "verified"
+              }
+            },
+            {
+              type: "thinking",
+              thinking: "继续核对公式、表格和代码围栏的渲染边界。",
+              thinking_hidden: false
+            },
+            {
               type: "text",
               text:
                 "# 总体方案\n\n阅读器会完全在本地处理导出文件，不上传聊天记录。\n\n" +
                 "## 数据导入\n\n每次导入都会计算文件指纹，并以账户和消息 UUID 去重。\n\n" +
                 "### 安全边界\n\n原始 ZIP 保持只读，本地修订与手动分类单独保存。\n\n" +
                 "## 阅读体验\n\n正文支持 Markdown、代码、引用和工具卡片。\n\n" +
-                "```ts\nconst archive = await importArchive(filePath);\n```\n\n" +
+                "```ts\nconst archive = await importArchive(filePath);\nconst literal = \"$x$\";\n```\n\n" +
+                "行内公式 $x_i \\in \\mathbb{R}^d$、变量列表 $k, L$ 与括号公式 \\(a+b=c\\) 均在本地渲染；价格 $5–$20 和行内代码 `$x$` 保持原文。\n\n" +
+                "查询文本 {'$and': [{'course_code': {'$eq': 'CS'}}]} 不应被识别为公式。\n\n" +
+                ">     $x$ 位于引用内的缩进代码中，也保持代码文本。\n\n" +
+                "$$\\mathcal{N}_k(q)=\\{x_1^q,\\ldots,x_k^q\\}\\subseteq\\mathbf{X}$$\n\n" +
+                "| 数据 | 说明 |\n| :--- | ---: |\n| 邻接矩阵 | $A \\in \\{0,1\\}^{|V| \\times |V|}$ |\n| 查询复杂度 | $O(n \\log n)$ |\n\n" +
                 "**阶段 5：补充检查**\n\n独立粗体标题也会出现在右侧目录中。\n\n" +
                 "## 后续导入\n\n新导出包可以继续添加，不会覆盖已经保存的原始版本。"
             },

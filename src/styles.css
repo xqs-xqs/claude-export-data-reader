@@ -983,25 +983,173 @@ html.is-resizing * {
   font-weight: 700;
 }
 
+.markdown .katex {
+  color: var(--text);
+  font-size: 1.02em;
+}
+
+.markdown .katex-display {
+  max-width: 100%;
+  margin: 1.15em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 2px 7px;
+  scrollbar-color: var(--scroll-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+.markdown .katex-display::-webkit-scrollbar {
+  height: 8px;
+}
+
+.markdown .katex-display::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+  background-clip: padding-box;
+}
+
+.table-scroll {
+  width: 100%;
+  max-width: 100%;
+  margin: 1.25em 0;
+  overflow-x: auto;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  scrollbar-color: var(--scroll-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+.table-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+  background-clip: padding-box;
+}
+
 .markdown table {
   width: 100%;
+  min-width: min(560px, 100%);
+  border: 0;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: 0.9em;
+  line-height: 1.55;
 }
 
 .markdown th,
 .markdown td {
-  padding: 9px 11px;
-  border: 1px solid var(--line);
+  padding: 11px 13px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown th {
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel) 48%, transparent);
+  font-weight: 600;
+}
+
+.markdown th[align="center"],
+.markdown td[align="center"] {
+  text-align: center;
+}
+
+.markdown th[align="right"],
+.markdown td[align="right"] {
+  text-align: right;
+}
+
+.markdown tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.markdown tbody tr {
+  transition: background 120ms ease;
+}
+
+.markdown tbody tr:hover {
+  background: color-mix(in srgb, var(--panel-hover) 34%, transparent);
+}
+
+.markdown td > :first-child,
+.markdown th > :first-child {
+  margin-top: 0;
+}
+
+.markdown td > :last-child,
+.markdown th > :last-child {
+  margin-bottom: 0;
+}
+
+.table-scroll .katex-display {
+  max-width: none;
+  margin: 0.25em 0;
+  overflow: visible;
   text-align: left;
 }
 
 .thinking,
-.tool-card {
+.tool-card,
+.process-group {
   margin: 11px 0;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: color-mix(in srgb, var(--surface) 65%, transparent);
+}
+
+.process-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.process-group-toggle > svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  transition: transform 160ms ease;
+}
+
+.process-group.is-open .process-group-toggle > svg {
+  transform: rotate(90deg);
+}
+
+.process-group-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.process-group-count {
+  color: var(--faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.process-group-body {
+  padding: 5px 10px 10px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 26%, transparent);
+}
+
+.process-group-body > .thinking,
+.process-group-body > .tool-card {
+  margin: 6px 0;
+  background: var(--surface);
 }
 
 .thinking-toggle,
@@ -1056,6 +1204,20 @@ html.is-resizing * {
 
 .tool-card.is-error .tool-status-dot {
   background: #c45c52;
+}
+
+.tool-payload + .tool-payload {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.tool-payload-label {
+  margin-bottom: 5px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .structured-preview,
