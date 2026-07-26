@@ -34,6 +34,13 @@ export const SearchIcon = (props: IconProps) => (
   </IconBase>
 );
 
+export const MemoryIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <path d="M6 5.5c2.4 0 4.3.7 6 2.1v11.2c-1.7-1.4-3.6-2.1-6-2.1H4V5.5z" />
+    <path d="M18 5.5c-2.4 0-4.3.7-6 2.1v11.2c1.7-1.4 3.6-2.1 6-2.1h2V5.5z" />
+  </IconBase>
+);
+
 export const MenuIcon = (props: IconProps) => (
   <IconBase {...props}>
     <path d="M4 7h16M4 12h16M4 17h16" />

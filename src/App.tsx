@@ -10,9 +10,15 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent
 } from "react";
-import type { Conversation, HeadingEntry, Library } from "./types";
+import type { Account, Conversation, HeadingEntry, Library } from "./types";
 import { dateLabel, extractHeadings, visibleMessages } from "./conversation";
 import MessageView from "./MessageView";
+import MemoryPage, { MemoryOutline } from "./MemoryView";
+import {
+  prepareMemoryDocument,
+  type MemoryProjectOption,
+  type MemoryScope
+} from "./memory";
 import { DEMO_LIBRARY } from "./demo";
 import {
   buildConversationSearchIndex,
@@ -25,6 +31,7 @@ import {
   ChevronIcon,
   CloseIcon,
   ImportIcon,
+  MemoryIcon,
   MenuIcon,
   MoonIcon,
   OutlineIcon,
@@ -37,11 +44,13 @@ const EMPTY_LIBRARY: Library = {
   imports: [],
   accounts: [],
   conversations: [],
-  projects: []
+  projects: [],
+  memories: []
 };
 
 type Theme = "light" | "dark";
 type PanelSide = "sidebar" | "outline";
+type PrimaryView = "conversation" | "memory";
 
 interface FontSettings {
   chat: number;
@@ -231,7 +240,9 @@ function Sidebar({
   library,
   conversations,
   selectedKey,
+  memoryActive,
   onSelect,
+  onOpenMemory,
   onOpenSearch,
   onImport,
   importing
@@ -239,7 +250,9 @@ function Sidebar({
   library: Library;
   conversations: Conversation[];
   selectedKey?: string;
+  memoryActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  onOpenMemory: () => void;
   onOpenSearch: () => void;
   onImport: () => void;
   importing: boolean;
@@ -268,6 +281,16 @@ function Sidebar({
         <SearchIcon />
         <span>搜索所有对话</span>
         <kbd>Ctrl ⇧ F</kbd>
+      </button>
+
+      <button
+        type="button"
+        className={`library-view-button ${memoryActive ? "is-active" : ""}`}
+        onClick={onOpenMemory}
+        aria-current={memoryActive ? "page" : undefined}
+      >
+        <MemoryIcon />
+        <span>Memory</span>
       </button>
 
       <div className="sidebar-section-title">
@@ -762,7 +785,7 @@ function PanelResizer({
   ) => void;
   onDoubleClick: (side: PanelSide) => void;
 }) {
-  const label = side === "sidebar" ? "左侧会话栏" : "右侧对话导航";
+  const label = side === "sidebar" ? "左侧会话栏" : "右侧导航栏";
   return (
     <div
       className={`panel-resizer panel-resizer-${side} ${
@@ -794,6 +817,13 @@ function PanelResizer({
 export default function App() {
   const [library, setLibrary] = useState<Library>(EMPTY_LIBRARY);
   const [selectedKey, setSelectedKey] = useState<string>();
+  const [primaryView, setPrimaryView] =
+    useState<PrimaryView>("conversation");
+  const [memoryScope, setMemoryScope] = useState<MemoryScope>("account");
+  const [selectedMemoryAccountUuid, setSelectedMemoryAccountUuid] =
+    useState<string>();
+  const [selectedProjectMemoryUuid, setSelectedProjectMemoryUuid] =
+    useState<string>();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [outlineOpen, setOutlineOpen] = useState(
     () => localStorage.getItem("outline-open") !== "false"
@@ -841,6 +871,74 @@ export default function App() {
     useState(0);
   const [importing, setImporting] = useState(false);
   const [notice, setNotice] = useState<string>();
+  const memoryRecords = useMemo(() => {
+    const latestByAccount = new Map<string, Library["memories"][number]>();
+    for (const memory of library.memories || []) {
+      const current = latestByAccount.get(memory.account_uuid);
+      const currentTime = current?.imported_at
+        ? new Date(current.imported_at).getTime()
+        : 0;
+      const nextTime = memory.imported_at
+        ? new Date(memory.imported_at).getTime()
+        : 0;
+      if (!current || nextTime >= currentTime) {
+        latestByAccount.set(memory.account_uuid, memory);
+      }
+    }
+    return Array.from(latestByAccount.values());
+  }, [library.memories]);
+  const memoryAccounts = useMemo(
+    () =>
+      memoryRecords.map(
+        (memory) =>
+          library.accounts.find(
+            (account) => account.uuid === memory.account_uuid
+          ) ||
+          ({
+            uuid: memory.account_uuid,
+            full_name: "未命名账户"
+          } satisfies Account)
+      ),
+    [library.accounts, memoryRecords]
+  );
+  const activeMemory =
+    memoryRecords.find(
+      (memory) => memory.account_uuid === selectedMemoryAccountUuid
+    ) || memoryRecords[0];
+  const activeMemoryAccountUuid =
+    activeMemory?.account_uuid || selectedMemoryAccountUuid;
+  const memoryProjectOptions = useMemo<MemoryProjectOption[]>(
+    () =>
+      Object.keys(activeMemory?.project_memories || {}).map((projectUuid) => {
+        const project = library.projects.find(
+          (item) =>
+            item.account_uuid === activeMemory?.account_uuid &&
+            item.uuid === projectUuid
+        );
+        return {
+          uuid: projectUuid,
+          name: project?.name || projectUuid
+        };
+      }),
+    [activeMemory, library.projects]
+  );
+  const activeProjectMemoryUuid =
+    memoryProjectOptions.find(
+      (project) => project.uuid === selectedProjectMemoryUuid
+    )?.uuid || memoryProjectOptions[0]?.uuid;
+  const memoryText =
+    memoryScope === "account"
+      ? activeMemory?.conversations_memory
+      : activeProjectMemoryUuid
+        ? activeMemory?.project_memories[activeProjectMemoryUuid]
+        : undefined;
+  const memoryAnchorPrefix = `memory-${
+    activeMemoryAccountUuid || "none"
+  }-${memoryScope}-${activeProjectMemoryUuid || "account"}`;
+  const memoryDocument = useMemo(
+    () => prepareMemoryDocument(memoryText, memoryAnchorPrefix),
+    [memoryAnchorPrefix, memoryText]
+  );
   const searchIndex = useMemo(
     () => buildConversationSearchIndex(library.conversations),
     [library.conversations]
@@ -895,11 +993,47 @@ export default function App() {
   }, [fontSettings]);
 
   useEffect(() => {
+    if (!memoryRecords.length) {
+      setSelectedMemoryAccountUuid(undefined);
+      return;
+    }
+    setSelectedMemoryAccountUuid((current) =>
+      current &&
+      memoryRecords.some((memory) => memory.account_uuid === current)
+        ? current
+        : memoryRecords[0].account_uuid
+    );
+  }, [memoryRecords]);
+
+  useEffect(() => {
+    const projectUuids = memoryProjectOptions.map((project) => project.uuid);
+    setSelectedProjectMemoryUuid((current) =>
+      current && projectUuids.includes(current)
+        ? current
+        : projectUuids[0]
+    );
+    setMemoryScope((current) => {
+      if (
+        current === "account" &&
+        !activeMemory?.conversations_memory &&
+        projectUuids.length
+      ) {
+        return "project";
+      }
+      if (current === "project" && !projectUuids.length) return "account";
+      return current;
+    });
+  }, [activeMemory, memoryProjectOptions]);
+
+  useEffect(() => {
     if (window.readerAPI) {
       window.readerAPI.getLibrary().then((nextLibrary) => {
         setLibrary(nextLibrary);
         const first = nextLibrary.conversations[0];
         setSelectedKey(first ? `${first.account_uuid}:${first.uuid}` : undefined);
+        if (!first && nextLibrary.memories?.length) {
+          setPrimaryView("memory");
+        }
       });
     } else if (new URLSearchParams(window.location.search).has("demo")) {
       setLibrary(DEMO_LIBRARY);
@@ -920,7 +1054,13 @@ export default function App() {
           closeConversationFind();
         }
       }
-      if (commandKey && !event.shiftKey && key === "f" && selectedKey) {
+      if (
+        commandKey &&
+        !event.shiftKey &&
+        key === "f" &&
+        selectedKey &&
+        primaryView === "conversation"
+      ) {
         event.preventDefault();
         setGlobalSearchOpen(false);
         setSearchTarget(undefined);
@@ -944,7 +1084,7 @@ export default function App() {
     }
     window.addEventListener("keydown", keyboardShortcut);
     return () => window.removeEventListener("keydown", keyboardShortcut);
-  }, [conversationFindOpen, selectedKey]);
+  }, [conversationFindOpen, primaryView, selectedKey]);
 
   useEffect(() => {
     function closeFontMenu(event: PointerEvent) {
@@ -988,10 +1128,17 @@ export default function App() {
         .map((entry) => entry.message.uuid)
     );
   }, [conversationFindHighlightQuery, selectedSearchEntry]);
-  const headings = useMemo(() => extractHeadings(messages), [messages]);
+  const conversationHeadings = useMemo(
+    () => extractHeadings(messages),
+    [messages]
+  );
+  const navigationHeadings =
+    primaryView === "memory"
+      ? memoryDocument.headings
+      : conversationHeadings;
 
   useEffect(() => {
-    if (!headings.length) {
+    if (!navigationHeadings.length) {
       setActiveHeading(undefined);
       return;
     }
@@ -1009,15 +1156,21 @@ export default function App() {
         rootMargin: "-12% 0px -75% 0px"
       }
     );
-    headings.forEach((heading) => {
+    navigationHeadings.forEach((heading) => {
       const element = document.getElementById(heading.id);
       if (element) observer.observe(element);
     });
     return () => observer.disconnect();
-  }, [headings, selectedKey]);
+  }, [navigationHeadings, primaryView, selectedKey]);
 
   useEffect(() => {
-    if (!searchTarget || searchTarget.conversationKey !== selectedKey) return;
+    if (
+      primaryView !== "conversation" ||
+      !searchTarget ||
+      searchTarget.conversationKey !== selectedKey
+    ) {
+      return;
+    }
 
     const frame = window.requestAnimationFrame(() => {
       const scroller =
@@ -1045,7 +1198,7 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [messages, searchTarget, selectedKey]);
+  }, [messages, primaryView, searchTarget, selectedKey]);
 
   useEffect(() => {
     const scroller =
@@ -1163,11 +1316,24 @@ export default function App() {
           const first = result.library?.conversations[0];
           return first ? `${first.account_uuid}:${first.uuid}` : undefined;
         });
+        if (
+          !selectedKey &&
+          !result.library.conversations.length &&
+          result.library.memories?.length
+        ) {
+          setPrimaryView("memory");
+        }
       }
       setNotice(
         result.duplicate
-          ? "这个导出包已经导入过了。"
-          : `已导入 ${result.importedConversations || 0} 个会话。`
+          ? result.importedMemories
+            ? `这个导出包已经导入过；已同步 ${result.importedMemories} 份账户记忆。`
+            : "这个导出包已经导入过了。"
+          : `已导入 ${result.importedConversations || 0} 个会话${
+              result.importedMemories
+                ? `和 ${result.importedMemories} 份账户记忆`
+                : ""
+            }。`
       );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "导入失败，请检查 ZIP。");
@@ -1177,6 +1343,7 @@ export default function App() {
   }
 
   function selectConversation(conversation: Conversation) {
+    setPrimaryView("conversation");
     setSelectedKey(conversationKey(conversation));
     setSearchTarget(undefined);
     setConversationFindOpen(false);
@@ -1186,6 +1353,52 @@ export default function App() {
     });
   }
 
+  function scrollMainToTop() {
+    window.requestAnimationFrame(() => {
+      document.querySelector(".conversation-scroll")?.scrollTo({ top: 0 });
+    });
+  }
+
+  function openMemory() {
+    setPrimaryView("memory");
+    setSearchTarget(undefined);
+    setConversationFindOpen(false);
+    setConversationFindQuery("");
+    const preferredAccountUuid =
+      selectedConversation?.account_uuid || activeMemoryAccountUuid;
+    const preferredMemory = memoryRecords.find(
+      (memory) => memory.account_uuid === preferredAccountUuid
+    );
+    if (preferredMemory) {
+      setSelectedMemoryAccountUuid(preferredMemory.account_uuid);
+    }
+    setFontMenuOpen(false);
+    scrollMainToTop();
+  }
+
+  function selectMemoryAccount(accountUuid: string) {
+    const memory = memoryRecords.find(
+      (item) => item.account_uuid === accountUuid
+    );
+    setSelectedMemoryAccountUuid(accountUuid);
+    const projectUuid = Object.keys(memory?.project_memories || {})[0];
+    setSelectedProjectMemoryUuid(projectUuid);
+    setMemoryScope(
+      memory?.conversations_memory ? "account" : projectUuid ? "project" : "account"
+    );
+    scrollMainToTop();
+  }
+
+  function selectMemoryScope(scope: MemoryScope) {
+    setMemoryScope(scope);
+    scrollMainToTop();
+  }
+
+  function selectProjectMemory(projectUuid: string) {
+    setSelectedProjectMemoryUuid(projectUuid);
+    scrollMainToTop();
+  }
+
   function openGlobalSearch() {
     setConversationFindOpen(false);
     setGlobalSearchOpen(true);
@@ -1193,7 +1406,7 @@ export default function App() {
   }
 
   function openConversationFind() {
-    if (!selectedKey) return;
+    if (!selectedKey || primaryView !== "conversation") return;
     setGlobalSearchOpen(false);
     setSearchTarget(undefined);
     setConversationFindOpen(true);
@@ -1231,6 +1444,7 @@ export default function App() {
     searchSequence.current += 1;
     setConversationFindOpen(false);
     setConversationFindQuery("");
+    setPrimaryView("conversation");
     setSelectedKey(nextConversationKey);
     setSearchTarget({
       conversationKey: nextConversationKey,
@@ -1390,8 +1604,12 @@ export default function App() {
         <Sidebar
           library={library}
           conversations={conversations}
-          selectedKey={selectedKey}
+          selectedKey={
+            primaryView === "conversation" ? selectedKey : undefined
+          }
+          memoryActive={primaryView === "memory"}
           onSelect={selectConversation}
+          onOpenMemory={openMemory}
           onOpenSearch={openGlobalSearch}
           onImport={importArchive}
           importing={importing}
@@ -1423,9 +1641,25 @@ export default function App() {
             <MenuIcon />
           </button>
           <div className="topbar-title">
-            {selectedConversation
-              ? conversationDisplayTitle(selectedConversation)
-              : "Claude 导出数据阅读器"}
+            {primaryView === "memory"
+              ? memoryScope === "account"
+                ? "Account Memory"
+                : `Project Memory${
+                    memoryProjectOptions.find(
+                      (project) =>
+                        project.uuid === activeProjectMemoryUuid
+                    )?.name
+                      ? ` · ${
+                          memoryProjectOptions.find(
+                            (project) =>
+                              project.uuid === activeProjectMemoryUuid
+                          )?.name
+                        }`
+                      : ""
+                  }`
+              : selectedConversation
+                ? conversationDisplayTitle(selectedConversation)
+                : "Claude 导出数据阅读器"}
           </div>
           <div className="topbar-actions">
             <button
@@ -1434,7 +1668,9 @@ export default function App() {
                 conversationFindOpen ? "is-active" : ""
               }`}
               onClick={openConversationFind}
-              disabled={!selectedConversation}
+              disabled={
+                primaryView !== "conversation" || !selectedConversation
+              }
               aria-label="在当前对话中查找"
               aria-controls="conversation-findbar"
               aria-expanded={conversationFindOpen}
@@ -1464,7 +1700,7 @@ export default function App() {
                   <div className="font-popover-title">字体大小</div>
                   {(
                     [
-                      ["chat", "聊天正文", 14, 22],
+                      ["chat", "正文", 14, 22],
                       ["sidebar", "左侧会话栏", 11, 18],
                       ["outline", "右侧导航栏", 11, 18]
                     ] as const
@@ -1501,17 +1737,25 @@ export default function App() {
             <button
               className={`icon-button outline-toggle ${outlineOpen ? "is-active" : ""}`}
               onClick={() => setOutlineOpen((value) => !value)}
-              aria-label={outlineOpen ? "隐藏对话导航" : "显示对话导航"}
+              aria-label={
+                outlineOpen
+                  ? `隐藏${primaryView === "memory" ? "记忆目录" : "对话导航"}`
+                  : `显示${primaryView === "memory" ? "记忆目录" : "对话导航"}`
+              }
               aria-controls="conversation-outline"
               aria-expanded={outlineOpen}
-              title={`${outlineOpen ? "隐藏" : "显示"}对话导航（Ctrl + Shift + O）`}
+              title={`${outlineOpen ? "隐藏" : "显示"}${
+                primaryView === "memory" ? "记忆目录" : "对话导航"
+              }（Ctrl + Shift + O）`}
             >
               <OutlineIcon />
             </button>
           </div>
         </header>
 
-        {conversationFindOpen && selectedConversation && (
+        {primaryView === "conversation" &&
+          conversationFindOpen &&
+          selectedConversation && (
           <div id="conversation-findbar">
             <ConversationFindBar
               query={conversationFindQuery}
@@ -1534,7 +1778,20 @@ export default function App() {
         )}
 
         <div className="conversation-scroll">
-          {selectedConversation ? (
+          {primaryView === "memory" ? (
+            <MemoryPage
+              accounts={memoryAccounts}
+              document={memoryDocument}
+              memory={activeMemory}
+              projectOptions={memoryProjectOptions}
+              scope={memoryScope}
+              selectedAccountUuid={activeMemoryAccountUuid}
+              selectedProjectUuid={activeProjectMemoryUuid}
+              onAccountChange={selectMemoryAccount}
+              onProjectChange={selectProjectMemory}
+              onScopeChange={selectMemoryScope}
+            />
+          ) : selectedConversation ? (
             <div className="conversation">
               <div className="conversation-heading">
                 <h1>{conversationDisplayTitle(selectedConversation)}</h1>
@@ -1592,12 +1849,21 @@ export default function App() {
         />
       )}
       {outlineOpen && (
-        <Outline
-          headings={headings}
-          activeId={activeHeading}
-          onNavigate={navigateToHeading}
-          onClose={() => setOutlineOpen(false)}
-        />
+        primaryView === "memory" ? (
+          <MemoryOutline
+            headings={memoryDocument.headings}
+            activeId={activeHeading}
+            onNavigate={navigateToHeading}
+            onClose={() => setOutlineOpen(false)}
+          />
+        ) : (
+          <Outline
+            headings={conversationHeadings}
+            activeId={activeHeading}
+            onNavigate={navigateToHeading}
+            onClose={() => setOutlineOpen(false)}
+          />
+        )
       )}
 
       <GlobalSearchDialog

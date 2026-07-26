@@ -15,7 +15,8 @@ const EMPTY_LIBRARY = {
   imports: [],
   accounts: [],
   conversations: [],
-  projects: []
+  projects: [],
+  memories: []
 };
 
 let mainWindow;
@@ -25,10 +26,27 @@ function dataFilePath() {
   return path.join(app.getPath("userData"), "reader-data.json");
 }
 
+function normalizeLibrary(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    ...EMPTY_LIBRARY,
+    ...source,
+    imports: Array.isArray(source.imports) ? source.imports : [],
+    accounts: Array.isArray(source.accounts) ? source.accounts : [],
+    conversations: Array.isArray(source.conversations)
+      ? source.conversations
+      : [],
+    projects: Array.isArray(source.projects) ? source.projects : [],
+    memories: Array.isArray(source.memories) ? source.memories : []
+  };
+}
+
 async function loadLibrary() {
   if (libraryCache) return libraryCache;
   try {
-    libraryCache = JSON.parse(await readFile(dataFilePath(), "utf8"));
+    libraryCache = normalizeLibrary(
+      JSON.parse(await readFile(dataFilePath(), "utf8"))
+    );
   } catch {
     libraryCache = structuredClone(EMPTY_LIBRARY);
   }
@@ -54,26 +72,30 @@ async function importArchive() {
 
   const parsed = await parseArchive(result.filePaths[0]);
   const library = await loadLibrary();
-  if (library.imports.some((item) => item.sha256 === parsed.sha256)) {
-    return {
-      canceled: false,
-      duplicate: true,
-      filename: parsed.filename,
-      library
-    };
-  }
+  const duplicate = library.imports.some(
+    (item) => item.sha256 === parsed.sha256
+  );
+  const existingImport = library.imports.find(
+    (item) => item.sha256 === parsed.sha256
+  );
+  const incomingMemories = parsed.memories.map((memory) => ({
+    ...memory,
+    imported_at: existingImport?.imported_at || memory.imported_at
+  }));
 
   const nextLibrary = {
     ...library,
-    imports: [
-      ...library.imports,
-      {
-        sha256: parsed.sha256,
-        filename: parsed.filename,
-        imported_at: parsed.importedAt,
-        conversation_count: parsed.conversations.length
-      }
-    ],
+    imports: duplicate
+      ? library.imports
+      : [
+          ...library.imports,
+          {
+            sha256: parsed.sha256,
+            filename: parsed.filename,
+            imported_at: parsed.importedAt,
+            conversation_count: parsed.conversations.length
+          }
+        ],
     accounts: mergeByKey(library.accounts, parsed.accounts, (item) => item.uuid),
     conversations: mergeByKey(
       library.conversations,
@@ -84,15 +106,21 @@ async function importArchive() {
       library.projects,
       parsed.projects,
       (item) => `${item.account_uuid}:${item.uuid}`
+    ),
+    memories: mergeByKey(
+      library.memories,
+      incomingMemories,
+      (item) => `${item.source_sha256 || "legacy"}:${item.account_uuid}`
     )
   };
 
   await saveLibrary(nextLibrary);
   return {
     canceled: false,
-    duplicate: false,
+    duplicate,
     filename: parsed.filename,
     importedConversations: parsed.conversations.length,
+    importedMemories: parsed.memories.length,
     library: nextLibrary
   };
 }

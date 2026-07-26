@@ -85,6 +85,15 @@ export interface Project {
   }>;
 }
 
+export interface MemoryRecord {
+  account_uuid: string;
+  conversations_memory?: string;
+  project_memories: Record<string, string>;
+  imported_from?: string;
+  imported_at?: string;
+  source_sha256?: string;
+}
+
 export interface Library {
   version: number;
   imports: Array<{
@@ -96,6 +105,7 @@ export interface Library {
   accounts: Account[];
   conversations: Conversation[];
   projects: Project[];
+  memories: MemoryRecord[];
 }
 
 export interface HeadingEntry {
@@ -112,6 +122,7 @@ export interface ImportResult {
   duplicate?: boolean;
   filename?: string;
   importedConversations?: number;
+  importedMemories?: number;
   library?: Library;
 }
 

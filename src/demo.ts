@@ -18,7 +18,35 @@ export const DEMO_LIBRARY: Library = {
       imported_from: "claude-export-demo.zip"
     }
   ],
-  projects: [],
+  projects: [
+    {
+      uuid: "demo-project",
+      account_uuid: "demo-account",
+      name: "Example Project"
+    }
+  ],
+  memories: [
+    {
+      account_uuid: "demo-account",
+      conversations_memory:
+        "**Work context**\n\nThis fictional account is reviewing an exported conversation archive in a local desktop reader.\n\n" +
+        "**Personal context**\n\nThis sample demonstrates how account-level Memory is presented without using real user information.\n\n" +
+        "**Top of mind**\n\nThe current example focuses on read-only rendering and clear navigation.\n\n" +
+        "**Brief history**\n\n*Recent months*\n\nThe sample archive gained search, formula rendering, collapsible process blocks, and an outline.\n\n" +
+        "*Earlier context*\n\nThe fictional archive was created to exercise the reader interface.\n\n" +
+        "*Long-term background*\n\nAll sample content is synthetic and remains local.",
+      project_memories: {
+        "demo-project":
+          "**Purpose & context**\n\nDemonstrate project-specific Memory without mixing it into account Memory.\n\n" +
+          "**Current state**\n\nThe project Memory is available as a separate read-only document.\n\n" +
+          "**On the horizon**\n\nContinue improving archive fidelity.\n\n" +
+          "**Key learnings & principles**\n\n*Technical:*\n\nPreserve the original Memory headings.\n\n" +
+          "*Metacognitive:*\n\nDo not invent titles for ordinary paragraphs.\n\n" +
+          "**Approach & patterns**\n\nUse explicit exported structure whenever it is available.\n\n" +
+          "**Tools & resources**\n\nElectron, React, TypeScript, and the Claude export ZIP."
+      }
+    }
+  ],
   conversations: [
     {
       uuid: "demo-conversation",
@@ -116,7 +144,7 @@ export const DEMO_LIBRARY: Library = {
               tool_use_id: "demo-tool",
               integration_name: "File Creation",
               content: {
-                conversations: 107,
+                conversations: 2,
                 status: "verified"
               }
             },

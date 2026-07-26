@@ -23,7 +23,13 @@ async function main() {
         contentBlocks: blocks.length,
         files: files.length,
         attachments: attachments.length,
-        projects: parsed.projects.length
+        projects: parsed.projects.length,
+        memories: parsed.memories.length,
+        projectMemories: parsed.memories.reduce(
+          (count, memory) =>
+            count + Object.keys(memory.project_memories || {}).length,
+          0
+        )
       },
       null,
       2
