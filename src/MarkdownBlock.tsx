@@ -264,12 +264,7 @@ export default function MarkdownBlock({
     const rendered = markdownParser.parse(
       protectedMath.markdown
     ) as string;
-    const renderedWithMath = renderMathPlaceholders(
-      rendered,
-      protectedMath.formulas
-    );
-
-    const html = DOMPurify.sanitize(renderedWithMath, {
+    const sanitizationOptions = {
       ADD_ATTR: [
         "target",
         "rel",
@@ -281,7 +276,38 @@ export default function MarkdownBlock({
         "data-code-copy",
         "data-code-index"
       ],
-      ADD_TAGS: ["span", "figure", "header", "button"]
+      ADD_TAGS: ["span", "figure", "header", "button"],
+      FORBID_TAGS: [
+        "base",
+        "embed",
+        "form",
+        "iframe",
+        "input",
+        "link",
+        "meta",
+        "object",
+        "option",
+        "select",
+        "source",
+        "style",
+        "textarea",
+        "track",
+        "video",
+        "audio"
+      ]
+    };
+    const sanitizedMarkdown = DOMPurify.sanitize(rendered, {
+      ...sanitizationOptions,
+      FORBID_ATTR: ["srcset", "style"]
+    });
+    const renderedWithMath = renderMathPlaceholders(
+      sanitizedMarkdown,
+      protectedMath.formulas
+    );
+
+    const html = DOMPurify.sanitize(renderedWithMath, {
+      ...sanitizationOptions,
+      FORBID_ATTR: ["srcset"]
     });
 
     return {

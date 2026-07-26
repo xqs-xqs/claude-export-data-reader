@@ -7,7 +7,7 @@ out/
 coverage/
 
 # Local application state and databases
-reader-data.json
+reader-data.json*
 *.sqlite
 *.sqlite3
 *.db
@@ -18,11 +18,18 @@ reader-data.json
 imports/
 exports/
 attachments/
+users.json
+conversations.json
+memories.json
+**/projects/*.json
 
 # Secrets and local settings
 .env
 .env.*
 !.env.example
+.npmrc
+*.key
+*.pem
 *.log
 
 # Editors and operating systems
