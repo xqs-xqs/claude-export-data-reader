@@ -1,135 +1,110 @@
-# Claude Export Data Reader
+<p align="center">
+  <strong>简体中文</strong> · <a href="./README_EN.md">English</a>
+</p>
 
-> Can't access chats from a suspended Claude account? Claude Export Data Reader lets you privately import and browse exported conversation archives on your desktop.
+<h1 align="center">Claude 导出数据阅读器</h1>
 
-Claude Export Data Reader is a local, read-only desktop application for importing Claude Export ZIP files and restoring their conversations in a polished, familiar reading interface. It is designed for people who still have their exported data but can no longer access the original account.
+<p align="center">
+  <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="Apache License 2.0" src="https://img.shields.io/badge/License-Apache%202.0-D22128?logo=apache&logoColor=white"></a>
+  <img alt="Windows 10+" src="https://img.shields.io/badge/Platform-Windows%2010%2B-0078D4?logo=windows11&logoColor=white">
+  <a href="https://www.electronjs.org/"><img alt="Electron 43" src="https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white"></a>
+  <a href="https://react.dev/"><img alt="React 19" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=20232A"></a>
+  <a href="https://www.typescriptlang.org/"><img alt="TypeScript 5" src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white"></a>
+  <img alt="Local-only data" src="https://img.shields.io/badge/Data-Local--only-CB6D51">
+</p>
 
-The application keeps archives on your computer, supports repeated imports and multiple accounts, and is being built to render conversation branches, Markdown, code, thinking sections, tool activity, citations, projects, and attachment placeholders. It is not affiliated with or endorsed by Anthropic.
+> Claude 账号无法登录或被封，但手里还保留着导出数据？Claude 导出数据阅读器可以把这份归档重新整理成一个纯本地的历史会话阅读库。
 
-## Features
+Claude 导出数据阅读器是一款只读桌面应用，用于回看 Claude 导出的历史会话。它适配 Claude Web 的视觉语言，尽力还原熟悉、舒适的原生阅读体验；它不是 Claude 的替代客户端，也不负责继续对话。
 
-- Local-only, read-only archive browsing
-- Repeated ZIP imports with SHA-256 duplicate detection
-- Multiple exported accounts
-- Light and dark themes
-- Collapsible left conversation sidebar
-- Collapsible right heading outline with scroll tracking
-- Current-branch conversation rendering
-- Markdown, code, thinking, tool, citation, and file-card rendering
-- No upload, cloud account, or API key required
+这个项目的目标很简单：尽可能利用用户仍然持有的导出数据，减少账号无法访问带来的损失，并让长对话比原始 JSON 更容易查找和阅读。
 
-## Install and run
+## 现有功能
 
-Requirements:
+### Claude 风格阅读体验
 
-- Windows 10 or later
-- Node.js 20 or later
-- npm
-
-Development:
-
-```bash
-npm install
-npm run dev
-```
-
-Build the web assets:
-
-```bash
-npm run build
-```
-
-Windows review:
-
-1. Double-click `review-windows.cmd`, or run `npm.cmd start` after building.
-2. In the desktop window, click **Import archive**.
-3. Select a Claude export ZIP and review the imported conversations.
-
-If Electron was installed while download scripts were disabled, run:
-
-```powershell
-npm.cmd rebuild electron
-```
-
-A packaged Windows installer will be added after the import and rendering workflows are validated against real exports.
-
-## Use
-
-1. Launch the application.
-2. Click **Import archive**.
-3. Select a Claude Export ZIP.
-4. Wait for the local import to finish.
-5. Select an account and conversation from the left sidebar.
-6. Use the right outline to jump between headings.
-7. Switch light or dark mode from the toolbar.
-
-The original ZIP is opened read-only. Imported data is stored only in the application's local data directory. Export archives, local databases, and secrets are excluded from Git by default.
-
----
-
-# Claude 导出数据阅读器
-
-> Claude 账号被封以后看不了以前的聊天记录？可以使用 Claude 导出数据阅读器，在本地导入并浏览已经导出的会话数据。
-
-Claude 导出数据阅读器是一款纯本地、只读的桌面应用。它可以导入 Claude Export ZIP，并以熟悉、精致的聊天阅读界面还原历史会话，适合仍持有导出数据、但已经无法登录原账号的用户。
-
-应用不会上传聊天数据，支持重复导入和多个账号，并将逐步完整呈现会话分支、Markdown、代码、Thinking、工具调用、引用来源、项目和附件占位预览。本项目与 Anthropic 没有隶属、合作或官方认可关系。
-
-## 功能
-
-- 纯本地、只读浏览
-- 使用 SHA-256 检测重复导入
-- 支持多个导出账号
+- 桌面端三栏布局，左右侧栏均可隐藏和拖动调整宽度
 - 浅色与深色主题
-- 可隐藏的左侧会话栏
-- 可隐藏的右侧标题导航及滚动高亮
-- 只展示当前会话分支
-- 渲染 Markdown、代码、Thinking、工具、引用和文件卡片
-- 无需云端账号或 API Key
+- 接近 Claude Web 的排版、间距与消息布局
+- Markdown 内容渲染
+- 使用 KaTeX 渲染行内和独立 LaTeX 公式
+- 代码语法高亮、语言标识与一键复制
+- Claude 风格的少边框表格，以及引用、列表、链接和来源展示
+- Thinking、工具调用及工具结果默认折叠，并可按组展开
+- 严格遵循 `hidden` 与 `hidden_in_chat`，不显示原会话中隐藏的内容
+- 只渲染当前会话分支，避免把历史分支混入正文
+- 独立展示账户 Memory 与项目 Memory，并使用导出数据中的原始标题生成目录
+- 在用户消息和 Claude 回复末尾还原文件预览占位卡片
 
-## 安装与运行
+### 相比 Claude Web 的阅读增强
+
+- 全局全文搜索：同时搜索会话标题和全部消息内容
+- 对话内全文搜索：显示匹配数量，可前后切换、跳转并高亮正文
+- 三类独立字号调节：对话正文、左侧会话栏、右侧目录栏
+- 可隐藏的对话目录：结合用户问题和 Claude 回答的主要标题生成导航
+- 目录滚动跟随与一键定位，便于回看超长会话
+- 左右侧栏可独立伸缩，适配不同屏幕和阅读习惯
+- 支持后续重复导入，使用 SHA-256 防止同一压缩包重复写入
+- 多账号导入防冲突（存储层）：会话与项目记录按账号标识保存，避免不同导出账号的数据互相覆盖；目前尚未提供账号筛选或每个账号独立资料库
+
+## 重要限制：导出文件并不完整
+
+Claude 当前的导出数据不会把用户当时上传的原始文件，以及 Claude 在回答中生成的输出文件本体一并打包。导出记录有时会保留文件名、文件引用、提取后的文本或工具调用记录，但缺失的文件本体无法由本阅读器恢复，其他应用同样无法从不存在的数据中还原它。
+
+当导出记录中还留有足够的元数据时，阅读器会在文件原本出现的位置生成一张预览占位卡片，帮助用户保留当时对话的上下文和使用记忆。占位卡片不能打开、下载或恢复原文件；如果导出数据中包含附件提取文本，阅读器会继续显示这部分文本。
+
+## 隐私与数据处理
+
+- 只读取所选 ZIP，不会修改原始压缩包
+- 导入结果仅保存在 Electron 的本地应用数据目录
+- 不上传聊天数据，不需要 Claude 账号或 API Key
+- 正式版会阻止导出内容主动访问网络；HTTP/HTTPS 外链只会交给系统浏览器打开
+- 可以以后继续导入其他 Claude 导出包，重复数据会在合并前检测
+- 导出 ZIP、本地数据库、日志和密钥默认不会提交到 Git
+- 当前资料以明文 JSON 保存，依赖 Windows 用户账户与设备权限保护；请勿在不受信任或多人共用的系统账户中导入敏感归档
+
+## 在 Windows 上安装和运行
 
 环境要求：
 
 - Windows 10 或更高版本
-- Node.js 20 或更高版本
+- Node.js 22.12 或更高版本
 - npm
 
-开发运行：
+安装依赖并启动开发版本：
 
-```bash
+```powershell
 npm install
 npm run dev
 ```
 
-构建前端资源：
-
-```bash
-npm run build
-```
-
-Windows 审查：
-
-1. 双击项目根目录的 `review-windows.cmd`，或者构建后执行 `npm.cmd start`。
-2. 在桌面窗口中点击“导入数据”。
-3. 选择 Claude 导出 ZIP，然后检查导入后的会话。
-
-如果此前安装依赖时跳过了 Electron 下载，请执行：
+构建并启动本地桌面版本：
 
 ```powershell
-npm.cmd rebuild electron
+npm run build
+npm start
 ```
 
-在真实导出数据完成导入和渲染验证后，项目会增加可直接安装的 Windows 安装包。
+安装依赖后，也可以双击项目根目录的 `review-windows.cmd`。
+
+如果 Electron 安装时缺少 Chromium 二进制文件，请执行：
+
+```powershell
+npm rebuild electron
+```
+
+当前仓库提供基于源码的本地运行方式，暂未包含打包好的 Windows 安装程序。
 
 ## 使用方法
 
 1. 启动应用。
-2. 点击“导入数据”。
-3. 选择 Claude Export ZIP。
-4. 等待本地导入完成。
-5. 从左侧栏选择账号和会话。
-6. 使用右侧标题导航快速跳转。
-7. 在工具栏切换浅色或深色主题。
+2. 点击“导入数据”，选择 Claude Export ZIP。
+3. 从左侧栏打开需要回看的会话。
+4. 使用 `Ctrl+F` 搜索当前对话，或使用 `Ctrl+Shift+F` 搜索整个本地会话库。
+5. 根据需要调整主题、三类字体大小、左右侧栏和对话目录。
 
-应用仅以只读方式打开原始 ZIP。导入内容只会保存在应用的本地数据目录中。导出 ZIP、本地数据库和密钥默认不会进入 Git。
+## 开源协议
+
+本项目采用 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) 开源协议。
+
+本项目为独立项目，与 Anthropic 不存在隶属、合作、赞助或官方认可关系。
