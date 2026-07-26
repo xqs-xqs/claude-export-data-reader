@@ -10,7 +10,11 @@ const {
 const { readFile, writeFile, mkdir } = require("node:fs/promises");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
-const { mergeByKey, parseArchive } = require("./archive.cjs");
+const {
+  mergeByKey,
+  normalizeStoredLibrary,
+  parseArchive
+} = require("./archive.cjs");
 
 const DEVELOPMENT_ORIGIN = "http://127.0.0.1:5173";
 const RENDERER_FILE_PATH = path.join(__dirname, "..", "dist", "index.html");
@@ -33,18 +37,7 @@ function dataFilePath() {
 }
 
 function normalizeLibrary(value) {
-  const source = value && typeof value === "object" ? value : {};
-  return {
-    ...EMPTY_LIBRARY,
-    ...source,
-    imports: Array.isArray(source.imports) ? source.imports : [],
-    accounts: Array.isArray(source.accounts) ? source.accounts : [],
-    conversations: Array.isArray(source.conversations)
-      ? source.conversations
-      : [],
-    projects: Array.isArray(source.projects) ? source.projects : [],
-    memories: Array.isArray(source.memories) ? source.memories : []
-  };
+  return normalizeStoredLibrary(value);
 }
 
 async function loadLibrary() {
@@ -138,10 +131,16 @@ function configureRendererSession(electronSession) {
       ]
     },
     (details, callback) => {
+      const requestUrl = new URL(details.url);
+      const developmentWebSocket =
+        requestUrl.protocol === "ws:" &&
+        requestUrl.hostname === "127.0.0.1" &&
+        requestUrl.port === "5173";
       if (
         !app.isPackaged &&
         activeDevelopmentOrigin &&
-        new URL(details.url).origin === activeDevelopmentOrigin
+        (requestUrl.origin === activeDevelopmentOrigin ||
+          developmentWebSocket)
       ) {
         callback({ cancel: false });
         return;
