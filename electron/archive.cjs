@@ -645,6 +645,26 @@ function normalizeStoredLibrary(value) {
       )
     };
   });
+  const pinnedConversations = requireArray(
+    library.pinned_conversations ?? [],
+    "reader-data.json.pinned_conversations",
+    ARCHIVE_LIMITS.conversations
+  ).map((value, index) => {
+    const label = `reader-data.json.pinned_conversations[${index}]`;
+    const pinned = requireRecord(value, label);
+    return {
+      conversation_key: requiredString(
+        pinned.conversation_key,
+        `${label}.conversation_key`,
+        8192
+      ),
+      pinned_at: requiredString(
+        pinned.pinned_at,
+        `${label}.pinned_at`,
+        256
+      )
+    };
+  });
 
   return {
     version: 1,
@@ -652,7 +672,8 @@ function normalizeStoredLibrary(value) {
     accounts,
     conversations,
     projects,
-    memories
+    memories,
+    pinned_conversations: pinnedConversations
   };
 }
 

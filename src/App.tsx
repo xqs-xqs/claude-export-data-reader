@@ -36,6 +36,7 @@ import {
   MoonIcon,
   OutlineIcon,
   SearchIcon,
+  StarIcon,
   SunIcon
 } from "./icons";
 
@@ -45,7 +46,8 @@ const EMPTY_LIBRARY: Library = {
   accounts: [],
   conversations: [],
   projects: [],
-  memories: []
+  memories: [],
+  pinned_conversations: []
 };
 
 type Theme = "light" | "dark";
@@ -238,25 +240,68 @@ function initialFontSettings(): FontSettings {
 
 function Sidebar({
   library,
-  conversations,
+  pinnedConversations,
+  recentConversations,
+  pinnedKeys,
+  pinningKeys,
   selectedKey,
   memoryActive,
   onSelect,
+  onTogglePinned,
   onOpenMemory,
   onOpenSearch,
   onImport,
   importing
 }: {
   library: Library;
-  conversations: Conversation[];
+  pinnedConversations: Conversation[];
+  recentConversations: Conversation[];
+  pinnedKeys: Set<string>;
+  pinningKeys: Set<string>;
   selectedKey?: string;
   memoryActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  onTogglePinned: (conversation: Conversation) => void;
   onOpenMemory: () => void;
   onOpenSearch: () => void;
   onImport: () => void;
   importing: boolean;
 }) {
+  const renderConversation = (conversation: Conversation) => {
+    const key = conversationKey(conversation);
+    const pinned = pinnedKeys.has(key);
+    return (
+      <div
+        className={`conversation-row ${selectedKey === key ? "is-active" : ""}`}
+        key={key}
+      >
+        <button
+          type="button"
+          className="conversation-select"
+          onClick={() => onSelect(conversation)}
+        >
+          <span className="conversation-title">
+            {conversationDisplayTitle(conversation)}
+          </span>
+          <span className="conversation-date">
+            {dateLabel(conversation.updated_at || conversation.created_at)}
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`conversation-pin ${pinned ? "is-pinned" : ""}`}
+          onClick={() => onTogglePinned(conversation)}
+          disabled={pinningKeys.has(key)}
+          aria-label={pinned ? "取消收藏此对话" : "收藏并置顶此对话"}
+          aria-pressed={pinned}
+          title={pinned ? "取消收藏" : "收藏并置顶"}
+        >
+          <StarIcon />
+        </button>
+      </div>
+    );
+  };
+
   return (
     <aside className="sidebar" id="conversation-sidebar">
       <div className="brand">
@@ -293,31 +338,29 @@ function Sidebar({
         <span>Memory</span>
       </button>
 
-      <div className="sidebar-section-title">
-        <span>最近聊天</span>
-        <span>{conversations.length}</span>
-      </div>
+      <div className="conversation-lists">
+        {pinnedConversations.length > 0 && (
+          <section className="conversation-section">
+            <div className="sidebar-section-title">
+              <span>Pinned</span>
+              <span>{pinnedConversations.length}</span>
+            </div>
+            <nav className="conversation-list" aria-label="Pinned">
+              {pinnedConversations.map(renderConversation)}
+            </nav>
+          </section>
+        )}
 
-      <nav className="conversation-list" aria-label="最近聊天">
-        {conversations.map((conversation) => (
-          <button
-            key={conversationKey(conversation)}
-            className={
-              selectedKey === conversationKey(conversation)
-                ? "is-active"
-                : ""
-            }
-            onClick={() => onSelect(conversation)}
-          >
-            <span className="conversation-title">
-              {conversationDisplayTitle(conversation)}
-            </span>
-            <span className="conversation-date">
-              {dateLabel(conversation.updated_at || conversation.created_at)}
-            </span>
-          </button>
-        ))}
-      </nav>
+        <section className="conversation-section">
+          <div className="sidebar-section-title">
+            <span>最近聊天</span>
+            <span>{recentConversations.length}</span>
+          </div>
+          <nav className="conversation-list" aria-label="最近聊天">
+            {recentConversations.map(renderConversation)}
+          </nav>
+        </section>
+      </div>
 
       <div className="account-card">
         <div className="avatar">
@@ -870,6 +913,9 @@ export default function App() {
   const [conversationFindActiveIndex, setConversationFindActiveIndex] =
     useState(0);
   const [importing, setImporting] = useState(false);
+  const [pinningKeys, setPinningKeys] = useState<Set<string>>(
+    () => new Set()
+  );
   const [notice, setNotice] = useState<string>();
   const memoryRecords = useMemo(() => {
     const latestByAccount = new Map<string, Library["memories"][number]>();
@@ -946,6 +992,40 @@ export default function App() {
   const conversations = useMemo(
     () => searchIndex.map((entry) => entry.conversation),
     [searchIndex]
+  );
+  const pinnedAtByKey = useMemo(
+    () =>
+      new Map(
+        (library.pinned_conversations || []).map((item) => [
+          item.conversation_key,
+          new Date(item.pinned_at).getTime()
+        ])
+      ),
+    [library.pinned_conversations]
+  );
+  const pinnedKeys = useMemo(
+    () => new Set(pinnedAtByKey.keys()),
+    [pinnedAtByKey]
+  );
+  const pinnedConversations = useMemo(
+    () =>
+      conversations
+        .filter((conversation) =>
+          pinnedKeys.has(conversationKey(conversation))
+        )
+        .sort(
+          (left, right) =>
+            (pinnedAtByKey.get(conversationKey(right)) || 0) -
+            (pinnedAtByKey.get(conversationKey(left)) || 0)
+        ),
+    [conversations, pinnedAtByKey, pinnedKeys]
+  );
+  const recentConversations = useMemo(
+    () =>
+      conversations.filter(
+        (conversation) => !pinnedKeys.has(conversationKey(conversation))
+      ),
+    [conversations, pinnedKeys]
   );
   const globalSearchResults = useMemo(
     () => searchConversationIndex(searchIndex, globalSearchQuery),
@@ -1353,6 +1433,48 @@ export default function App() {
     });
   }
 
+  async function toggleConversationPinned(conversation: Conversation) {
+    const key = conversationKey(conversation);
+    if (pinningKeys.has(key)) return;
+    const pinned = !pinnedKeys.has(key);
+    setPinningKeys((current) => new Set(current).add(key));
+
+    try {
+      if (window.readerAPI) {
+        setLibrary(
+          await window.readerAPI.setConversationPinned(key, pinned)
+        );
+      } else {
+        setLibrary((current) => ({
+          ...current,
+          pinned_conversations: pinned
+            ? [
+                {
+                  conversation_key: key,
+                  pinned_at: new Date().toISOString()
+                },
+                ...(current.pinned_conversations || []).filter(
+                  (item) => item.conversation_key !== key
+                )
+              ]
+            : (current.pinned_conversations || []).filter(
+                (item) => item.conversation_key !== key
+              )
+        }));
+      }
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "无法更新收藏状态。"
+      );
+    } finally {
+      setPinningKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
   function scrollMainToTop() {
     window.requestAnimationFrame(() => {
       document.querySelector(".conversation-scroll")?.scrollTo({ top: 0 });
@@ -1603,12 +1725,16 @@ export default function App() {
       {sidebarOpen && (
         <Sidebar
           library={library}
-          conversations={conversations}
+          pinnedConversations={pinnedConversations}
+          recentConversations={recentConversations}
+          pinnedKeys={pinnedKeys}
+          pinningKeys={pinningKeys}
           selectedKey={
             primaryView === "conversation" ? selectedKey : undefined
           }
           memoryActive={primaryView === "memory"}
           onSelect={selectConversation}
+          onTogglePinned={toggleConversationPinned}
           onOpenMemory={openMemory}
           onOpenSearch={openGlobalSearch}
           onImport={importArchive}
@@ -1662,6 +1788,34 @@ export default function App() {
                 : "Claude 导出数据阅读器"}
           </div>
           <div className="topbar-actions">
+            {primaryView === "conversation" && selectedConversation && (
+              <button
+                className={`icon-button conversation-pin-topbar ${
+                  pinnedKeys.has(conversationKey(selectedConversation))
+                    ? "is-pinned"
+                    : ""
+                }`}
+                onClick={() => toggleConversationPinned(selectedConversation)}
+                disabled={pinningKeys.has(
+                  conversationKey(selectedConversation)
+                )}
+                aria-label={
+                  pinnedKeys.has(conversationKey(selectedConversation))
+                    ? "取消收藏此对话"
+                    : "收藏并置顶此对话"
+                }
+                aria-pressed={pinnedKeys.has(
+                  conversationKey(selectedConversation)
+                )}
+                title={
+                  pinnedKeys.has(conversationKey(selectedConversation))
+                    ? "取消收藏"
+                    : "收藏并置顶"
+                }
+              >
+                <StarIcon />
+              </button>
+            )}
             <button
               ref={conversationFindButtonRef}
               className={`icon-button ${

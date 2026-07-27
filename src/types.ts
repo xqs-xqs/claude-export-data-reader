@@ -94,6 +94,11 @@ export interface MemoryRecord {
   source_sha256?: string;
 }
 
+export interface PinnedConversation {
+  conversation_key: string;
+  pinned_at: string;
+}
+
 export interface Library {
   version: number;
   imports: Array<{
@@ -106,6 +111,7 @@ export interface Library {
   conversations: Conversation[];
   projects: Project[];
   memories: MemoryRecord[];
+  pinned_conversations: PinnedConversation[];
 }
 
 export interface HeadingEntry {
@@ -133,6 +139,10 @@ declare global {
       getLibrary(): Promise<Library>;
       clearLibrary(): Promise<{ canceled: boolean; library?: Library }>;
       copyText(text: string): Promise<boolean>;
+      setConversationPinned(
+        conversationKey: string,
+        pinned: boolean
+      ): Promise<Library>;
     };
   }
 }

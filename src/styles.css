@@ -375,20 +375,35 @@ html.is-resizing * {
   font-weight: 600;
 }
 
-.conversation-list {
+.conversation-lists {
   min-height: 0;
   flex: 1;
   overflow-y: scroll;
 }
 
-.conversation-list button {
+.conversation-section + .conversation-section {
+  margin-top: 18px;
+}
+
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.conversation-row {
+  position: relative;
+  border-radius: 8px;
+}
+
+.conversation-select {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 7px;
   align-items: center;
   width: 100%;
   min-height: 38px;
-  padding: 0 10px;
+  padding: 0 34px 0 10px;
   border: 0;
   border-radius: 8px;
   text-align: left;
@@ -396,13 +411,70 @@ html.is-resizing * {
   cursor: pointer;
 }
 
-.conversation-list button:hover {
+.conversation-row:hover,
+.conversation-row.is-active {
   background: var(--panel-hover);
 }
 
-.conversation-list button.is-active {
+.conversation-row.is-active {
   background: var(--surface);
   box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.conversation-pin {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: var(--faint);
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.conversation-row:hover .conversation-pin,
+.conversation-row:focus-within .conversation-pin,
+.conversation-pin.is-pinned {
+  opacity: 1;
+}
+
+.conversation-pin:hover,
+.conversation-pin:focus-visible {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.conversation-pin:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  outline-offset: 1px;
+}
+
+.conversation-pin:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+
+.conversation-pin svg,
+.conversation-pin-topbar svg {
+  width: 15px;
+  height: 15px;
+}
+
+.conversation-pin.is-pinned,
+.conversation-pin-topbar.is-pinned {
+  color: var(--accent);
+}
+
+.conversation-pin.is-pinned svg,
+.conversation-pin-topbar.is-pinned svg {
+  fill: currentColor;
 }
 
 .search-result-kind {
@@ -996,7 +1068,7 @@ html.is-resizing * {
   scroll-behavior: smooth;
 }
 
-.conversation-list,
+.conversation-lists,
 .conversation-scroll,
 .outline {
   scrollbar-gutter: stable;
@@ -1004,19 +1076,19 @@ html.is-resizing * {
   scrollbar-color: var(--scroll-thumb) var(--scroll-track);
 }
 
-.conversation-list::-webkit-scrollbar,
+.conversation-lists::-webkit-scrollbar,
 .conversation-scroll::-webkit-scrollbar,
 .outline::-webkit-scrollbar {
   width: 12px;
 }
 
-.conversation-list::-webkit-scrollbar-track,
+.conversation-lists::-webkit-scrollbar-track,
 .conversation-scroll::-webkit-scrollbar-track,
 .outline::-webkit-scrollbar-track {
   background: var(--scroll-track);
 }
 
-.conversation-list::-webkit-scrollbar-thumb,
+.conversation-lists::-webkit-scrollbar-thumb,
 .conversation-scroll::-webkit-scrollbar-thumb,
 .outline::-webkit-scrollbar-thumb {
   min-height: 34px;
@@ -1026,7 +1098,7 @@ html.is-resizing * {
   background-clip: padding-box;
 }
 
-.conversation-list::-webkit-scrollbar-button,
+.conversation-lists::-webkit-scrollbar-button,
 .conversation-scroll::-webkit-scrollbar-button,
 .outline::-webkit-scrollbar-button {
   display: none;
@@ -1034,7 +1106,7 @@ html.is-resizing * {
   height: 0;
 }
 
-.conversation-list::-webkit-scrollbar-thumb:hover,
+.conversation-lists::-webkit-scrollbar-thumb:hover,
 .conversation-scroll::-webkit-scrollbar-thumb:hover,
 .outline::-webkit-scrollbar-thumb:hover {
   background: var(--scroll-thumb-hover);

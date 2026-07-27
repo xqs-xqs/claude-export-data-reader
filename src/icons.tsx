@@ -85,3 +85,9 @@ export const CloseIcon = (props: IconProps) => (
     <path d="M6 6l12 12M18 6 6 18" />
   </IconBase>
 );
+
+export const StarIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <path d="m12 3 2.75 5.57 6.15.9-4.45 4.33 1.05 6.12L12 17.03l-5.5 2.89 1.05-6.12L3.1 9.47l6.15-.9z" />
+  </IconBase>
+);

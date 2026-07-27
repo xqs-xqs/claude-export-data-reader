@@ -245,5 +245,6 @@ export const DEMO_LIBRARY: Library = {
       updated_at: "2026-07-18T09:00:00Z",
       chat_messages: []
     }
-  ]
+  ],
+  pinned_conversations: []
 };

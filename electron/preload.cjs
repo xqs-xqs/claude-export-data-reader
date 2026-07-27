@@ -4,5 +4,7 @@ contextBridge.exposeInMainWorld("readerAPI", {
   importArchive: () => ipcRenderer.invoke("archive:import"),
   getLibrary: () => ipcRenderer.invoke("library:get"),
   clearLibrary: () => ipcRenderer.invoke("library:clear"),
-  copyText: (text) => ipcRenderer.invoke("clipboard:write-text", text)
+  copyText: (text) => ipcRenderer.invoke("clipboard:write-text", text),
+  setConversationPinned: (conversationKey, pinned) =>
+    ipcRenderer.invoke("conversation:set-pinned", conversationKey, pinned)
 });

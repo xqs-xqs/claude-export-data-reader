@@ -24,7 +24,8 @@ const EMPTY_LIBRARY = {
   accounts: [],
   conversations: [],
   projects: [],
-  memories: []
+  memories: [],
+  pinned_conversations: []
 };
 
 let mainWindow;
@@ -288,6 +289,45 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   handleTrusted("archive:import", importArchive);
   handleTrusted("library:get", loadLibrary);
+  handleTrusted("conversation:set-pinned", async (conversationKey, pinned) => {
+    if (
+      typeof conversationKey !== "string" ||
+      !conversationKey ||
+      conversationKey.length > 8192
+    ) {
+      throw new TypeError("Conversation key must be non-empty text.");
+    }
+    if (typeof pinned !== "boolean") {
+      throw new TypeError("Pinned state must be a boolean.");
+    }
+
+    const library = await loadLibrary();
+    const conversationExists = library.conversations.some(
+      (conversation) =>
+        `${conversation.account_uuid}:${conversation.uuid}` === conversationKey
+    );
+    if (!conversationExists) {
+      throw new Error("Cannot pin a conversation that is not in the library.");
+    }
+
+    const existing = library.pinned_conversations.filter(
+      (item) => item.conversation_key !== conversationKey
+    );
+    const nextLibrary = {
+      ...library,
+      pinned_conversations: pinned
+        ? [
+            {
+              conversation_key: conversationKey,
+              pinned_at: new Date().toISOString()
+            },
+            ...existing
+          ]
+        : existing
+    };
+    await saveLibrary(nextLibrary);
+    return nextLibrary;
+  });
   handleTrusted("clipboard:write-text", (text) => {
     if (typeof text !== "string") {
       throw new TypeError("Clipboard content must be text.");
