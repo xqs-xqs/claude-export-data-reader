@@ -33,7 +33,7 @@ A read-only desktop app for reviewing exported Claude conversations. Follows Cla
 - Markdown rendering with Claude-inspired typography and spacing
 - Inline and display LaTeX formulas rendered with KaTeX
 - Syntax-highlighted code blocks with language labels and copy buttons
-- Low-border tables, blockquotes, lists, links, and citations
+- Low-border tables, blockquotes, lists, and links, with citations restored inline and shown in local URL popovers
 - Thinking and tool activity grouped and collapsed by default
 - Strict handling of `hidden` and `hidden_in_chat` content
 - Current conversation-branch rendering
@@ -44,6 +44,7 @@ A read-only desktop app for reviewing exported Claude conversations. Follows Cla
 
 - Global full-text search across conversation titles and messages
 - In-conversation full-text search with match count, navigation, jump, and highlighting
+- Locally persisted favorites collected in a separate `Pinned` section
 - Independent font-size controls for the conversation, left sidebar, and right outline
 - A collapsible conversation outline built from user questions and primary answer headings
 - Scroll tracking and one-click navigation between conversation sections
