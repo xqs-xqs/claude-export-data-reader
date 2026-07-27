@@ -13,9 +13,12 @@
 <div align="center">
 
 > Turn a Claude export ZIP into a searchable, browsable local conversation library.
-</div>
 
 A read-only desktop app for reviewing exported Claude conversations. Follows Claude Web's visual language to restore a native reading experience. 
+
+</div>
+
+
 
 <p align="center">
   <a href="./README.md">简体中文</a> | <strong>English</strong>

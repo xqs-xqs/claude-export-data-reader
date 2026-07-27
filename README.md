@@ -12,9 +12,12 @@
 <div align="center">
 
 > 把 Claude 导出的 ZIP 变成一个可搜索、可浏览的本地会话阅读库。
-</div>
 
 只读桌面应用，用于回看 Claude 导出的历史会话，适配 Claude Web 视觉语言，还原原生阅读体验。
+
+</div>
+
+
 
 
 <p align="center">
