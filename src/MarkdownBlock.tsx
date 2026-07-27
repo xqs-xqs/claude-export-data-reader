@@ -1,6 +1,14 @@
-import { useMemo, type MouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent
+} from "react";
 import DOMPurify from "dompurify";
 import { Marked, Renderer } from "marked";
+import type { Citation } from "./types";
 import { addHeadingAnchors } from "./headings";
 import { highlightCode } from "./codeHighlight";
 import { protectMathInMarkdown, renderMathPlaceholders } from "./math";
@@ -10,6 +18,159 @@ interface Props {
   text: string;
   anchorPrefix: string;
   searchQuery?: string;
+  citations?: Citation[];
+}
+
+interface PreparedCitation {
+  index: number;
+  token?: string;
+  url: string;
+}
+
+const CITATION_TOKEN_PREFIX = "\uE110claude-citation-";
+const CITATION_TOKEN_SUFFIX = "\uE111";
+
+function safeExternalUrl(value: string | undefined) {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function prepareCitationMarkdown(text: string, citations: Citation[] = []) {
+  const sources: PreparedCitation[] = [];
+  const insertions: Array<{ index: number; token: string }> = [];
+
+  citations.forEach((citation, index) => {
+    const url = safeExternalUrl(citation.details?.url);
+    if (!url) return;
+
+    const end = citation.end_index;
+    const start = citation.start_index;
+    const validPosition =
+      Number.isInteger(end) &&
+      (end as number) >= 0 &&
+      (end as number) <= text.length &&
+      (start === undefined ||
+        (Number.isInteger(start) &&
+          start >= 0 &&
+          start <= (end as number)));
+    const token = validPosition
+      ? `${CITATION_TOKEN_PREFIX}${index}${CITATION_TOKEN_SUFFIX}`
+      : undefined;
+    sources.push({ index, token, url });
+    if (token) insertions.push({ index: end as number, token });
+  });
+
+  let markdown = text;
+  insertions
+    .sort(
+      (left, right) =>
+        right.index - left.index || right.token.localeCompare(left.token)
+    )
+    .forEach(({ index, token }) => {
+      markdown = `${markdown.slice(0, index)}${token}${markdown.slice(index)}`;
+    });
+
+  return { markdown, sources };
+}
+
+function citationElement(source: PreparedCitation, open: boolean) {
+  const anchor = document.createElement("span");
+  anchor.className = `citation-anchor ${open ? "is-open" : ""}`;
+
+  const marker = document.createElement("span");
+  marker.className = "citation-marker";
+  marker.dataset.citationMarker = String(source.index);
+  marker.setAttribute("role", "button");
+  marker.setAttribute("tabindex", "0");
+  marker.setAttribute("aria-label", `查看来源 ${source.index + 1}`);
+  marker.setAttribute("aria-expanded", String(open));
+  marker.textContent = String(source.index + 1);
+
+  const popover = document.createElement("span");
+  popover.className = "citation-popover";
+  popover.setAttribute("role", "tooltip");
+
+  const url = document.createElement("span");
+  url.className = "citation-url";
+  url.dataset.citationUrl = source.url;
+  url.setAttribute("role", "link");
+  url.setAttribute("tabindex", "0");
+  url.setAttribute("title", source.url);
+  url.textContent = source.url;
+
+  popover.append(url);
+  anchor.append(marker, popover);
+  return anchor;
+}
+
+function addCitationElements(
+  html: string,
+  sources: PreparedCitation[],
+  activeCitation: number | undefined
+) {
+  if (!sources.length) return html;
+
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const sourcesByIndex = new Map(
+    sources.map((source) => [source.index, source])
+  );
+  const resolved = new Set<number>();
+  const walker = document.createTreeWalker(
+    template.content,
+    NodeFilter.SHOW_TEXT
+  );
+  const textNodes: Text[] = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode as Text);
+  const tokenPattern = new RegExp(
+    `${CITATION_TOKEN_PREFIX}(\\d+)${CITATION_TOKEN_SUFFIX}`,
+    "g"
+  );
+
+  for (const node of textNodes) {
+    tokenPattern.lastIndex = 0;
+    if (!tokenPattern.test(node.data)) continue;
+    tokenPattern.lastIndex = 0;
+
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    let match: RegExpExecArray | null;
+    while ((match = tokenPattern.exec(node.data))) {
+      if (match.index > cursor) {
+        fragment.append(node.data.slice(cursor, match.index));
+      }
+      const index = Number(match[1]);
+      const source = sourcesByIndex.get(index);
+      if (source) {
+        resolved.add(index);
+        fragment.append(citationElement(source, activeCitation === index));
+      }
+      cursor = match.index + match[0].length;
+    }
+    if (cursor < node.data.length) fragment.append(node.data.slice(cursor));
+    node.replaceWith(fragment);
+  }
+
+  const unresolved = sources.filter((source) => !resolved.has(source.index));
+  if (unresolved.length) {
+    const fallback = document.createElement("span");
+    fallback.className = "citation-fallback";
+    unresolved.forEach((source) => {
+      fallback.append(
+        citationElement(source, activeCitation === source.index)
+      );
+    });
+    template.content.append(fallback);
+  }
+
+  return template.innerHTML;
 }
 
 interface SearchHighlightRange {
@@ -42,7 +203,7 @@ function highlightSearchMatches(
       !node.data ||
       !parent ||
       parent.closest(
-        "button, .code-block-header, .heading-anchor, .katex, [aria-hidden='true']"
+        "button, .code-block-header, .heading-anchor, .katex, .citation-anchor, .citation-fallback, [aria-hidden='true']"
       )
     ) {
       continue;
@@ -223,8 +384,36 @@ async function writeClipboard(text: string) {
 export default function MarkdownBlock({
   text,
   anchorPrefix,
-  searchQuery
+  searchQuery,
+  citations
 }: Props) {
+  const [activeCitation, setActiveCitation] = useState<number>();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (activeCitation === undefined) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        !(target instanceof Node) ||
+        !containerRef.current?.contains(target)
+      ) {
+        setActiveCitation(undefined);
+      }
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setActiveCitation(undefined);
+    };
+
+    window.addEventListener("pointerdown", closeOnOutsidePointer);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnOutsidePointer);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [activeCitation]);
+
   const renderedMarkdown = useMemo(() => {
     const codeTexts: string[] = [];
     const renderer = new Renderer();
@@ -258,8 +447,9 @@ export default function MarkdownBlock({
       renderer
     });
 
+    const preparedCitations = prepareCitationMarkdown(text, citations);
     const protectedMath = protectMathInMarkdown(
-      addHeadingAnchors(text, anchorPrefix)
+      addHeadingAnchors(preparedCitations.markdown, anchorPrefix)
     );
     const rendered = markdownParser.parse(
       protectedMath.markdown
@@ -312,23 +502,62 @@ export default function MarkdownBlock({
 
     return {
       codeTexts,
-      html
+      html,
+      citations: preparedCitations.sources
     };
-  }, [anchorPrefix, text]);
+  }, [anchorPrefix, citations, text]);
+
+  const citationHtml = useMemo(
+    () =>
+      addCitationElements(
+        renderedMarkdown.html,
+        renderedMarkdown.citations,
+        activeCitation
+      ),
+    [activeCitation, renderedMarkdown.citations, renderedMarkdown.html]
+  );
 
   const highlightedHtml = useMemo(
     () =>
       highlightSearchMatches(
-        renderedMarkdown.html,
+        citationHtml,
         searchQuery,
         anchorPrefix
       ),
-    [anchorPrefix, renderedMarkdown.html, searchQuery]
+    [anchorPrefix, citationHtml, searchQuery]
   );
 
   const handleClick = async (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+
+    const citationUrl = target.closest<HTMLElement>("[data-citation-url]");
+    if (citationUrl?.dataset.citationUrl) {
+      event.preventDefault();
+      event.stopPropagation();
+      window.open(citationUrl.dataset.citationUrl, "_blank", "noopener,noreferrer");
+      setActiveCitation(undefined);
+      return;
+    }
+
+    const citationMarker = target.closest<HTMLElement>(
+      "[data-citation-marker]"
+    );
+    if (citationMarker) {
+      event.preventDefault();
+      event.stopPropagation();
+      const index = Number(citationMarker.dataset.citationMarker);
+      if (Number.isInteger(index)) {
+        setActiveCitation((current) =>
+          current === index ? undefined : index
+        );
+      }
+      return;
+    }
+
+    if (!target.closest(".citation-popover")) {
+      setActiveCitation(undefined);
+    }
 
     const button = target.closest<HTMLButtonElement>("[data-code-copy]");
     if (!button) return;
@@ -355,10 +584,38 @@ export default function MarkdownBlock({
     }, 1600);
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+
+    const citationUrl = target.closest<HTMLElement>("[data-citation-url]");
+    if (citationUrl?.dataset.citationUrl) {
+      event.preventDefault();
+      window.open(citationUrl.dataset.citationUrl, "_blank", "noopener,noreferrer");
+      setActiveCitation(undefined);
+      return;
+    }
+
+    const citationMarker = target.closest<HTMLElement>(
+      "[data-citation-marker]"
+    );
+    if (!citationMarker) return;
+    event.preventDefault();
+    const index = Number(citationMarker.dataset.citationMarker);
+    if (Number.isInteger(index)) {
+      setActiveCitation((current) =>
+        current === index ? undefined : index
+      );
+    }
+  };
+
   return (
     <div
+      ref={containerRef}
       className="markdown"
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       dangerouslySetInnerHTML={{ __html: highlightedHtml }}
     />
   );

@@ -290,23 +290,8 @@ function Content({
           text={block.text}
           anchorPrefix={`heading-${message.uuid}-${blockIndex}`}
           searchQuery={searchQuery}
+          citations={block.citations}
         />
-        {(block.citations || []).length > 0 && (
-          <div className="citations">
-            {block.citations?.map((citation, index) =>
-              citation.details?.url ? (
-                <a
-                  href={citation.details.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  key={citation.uuid || index}
-                >
-                  来源 {index + 1}
-                </a>
-              ) : null
-            )}
-          </div>
-        )}
       </div>
     );
   }

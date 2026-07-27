@@ -130,6 +130,21 @@ export const DEMO_LIBRARY: Library = {
                 "## 后续导入\n\n新导出包可以继续添加，不会覆盖已经保存的原始版本。"
             },
             {
+              type: "text",
+              text: "引用来源会直接跟在对应文字之后，不会统一堆放到回答末尾。",
+              citations: [
+                {
+                  uuid: "demo-citation",
+                  start_index: 0,
+                  end_index: 4,
+                  details: {
+                    type: "web",
+                    url: "https://www.anthropic.com/"
+                  }
+                }
+              ]
+            },
+            {
               type: "tool_use",
               id: "demo-tool",
               name: "inspect_archive",

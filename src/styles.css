@@ -1404,21 +1404,98 @@ html.is-resizing * {
   text-underline-offset: 3px;
 }
 
-.citations {
+.citation-anchor {
+  position: relative;
+  display: inline-flex;
+  margin: 0 0.08em;
+  vertical-align: super;
+}
+
+.citation-marker {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.42em;
+  height: 1.42em;
+  padding: 0 0.34em;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+  font-family:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-size: 0.58em;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.citation-marker:hover,
+.citation-marker:focus-visible,
+.citation-anchor.is-open .citation-marker {
+  color: var(--surface);
+  background: var(--accent);
+}
+
+.citation-marker:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.citation-popover {
+  position: absolute;
+  z-index: 40;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  display: none;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 48px));
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-family:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  transform: translateX(-50%);
+  vertical-align: baseline;
+}
+
+.citation-anchor.is-open .citation-popover {
+  display: block;
+}
+
+.citation-url {
+  display: block;
+  overflow: hidden;
+  color: var(--accent);
+  text-decoration: underline;
+  text-overflow: ellipsis;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.citation-url:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.citation-fallback {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 10px;
 }
 
-.citations a {
-  padding: 4px 8px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
-  background: var(--surface);
-  font-size: 10.5px;
-  text-decoration: none;
+.citation-fallback .citation-anchor {
+  vertical-align: baseline;
 }
 
 .markdown blockquote {
