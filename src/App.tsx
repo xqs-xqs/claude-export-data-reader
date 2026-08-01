@@ -1766,27 +1766,7 @@ export default function App() {
           >
             <MenuIcon />
           </button>
-          <div className="topbar-title">
-            {primaryView === "memory"
-              ? memoryScope === "account"
-                ? "Account Memory"
-                : `Project Memory${
-                    memoryProjectOptions.find(
-                      (project) =>
-                        project.uuid === activeProjectMemoryUuid
-                    )?.name
-                      ? ` · ${
-                          memoryProjectOptions.find(
-                            (project) =>
-                              project.uuid === activeProjectMemoryUuid
-                          )?.name
-                        }`
-                      : ""
-                  }`
-              : selectedConversation
-                ? conversationDisplayTitle(selectedConversation)
-                : "Claude 导出数据阅读器"}
-          </div>
+          <div aria-hidden="true" />
           <div className="topbar-actions">
             {primaryView === "conversation" && selectedConversation && (
               <button

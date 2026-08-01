@@ -851,19 +851,9 @@ html.is-resizing * {
   backdrop-filter: blur(12px);
 }
 
-.topbar-title {
-  overflow: hidden;
-  padding-left: 4px;
-  font-size: 13px;
-  font-weight: 600;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .topbar-actions {
   display: flex;
-  gap: 3px;
+  gap: 4px;
 }
 
 .font-settings-anchor {
@@ -872,7 +862,7 @@ html.is-resizing * {
 
 .font-button {
   font-family: Georgia, serif;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -965,6 +955,17 @@ html.is-resizing * {
 .icon-button:disabled {
   opacity: 0.28;
   cursor: default;
+}
+
+.topbar .icon-button {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+
+.topbar .icon-button svg {
+  width: 19px;
+  height: 19px;
 }
 
 .outline-toggle svg {
