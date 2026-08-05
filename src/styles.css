@@ -3,13 +3,13 @@
     Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
     "Noto Sans SC", sans-serif;
   color: #292723;
-  background: #f8f7f3;
+  background: #fcfcfb;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --page: #f8f7f3;
-  --panel: #f0efe9;
-  --panel-hover: #e7e5de;
-  --surface: #fffefa;
+  --page: #fcfcfb;
+  --panel: #fbfbfa;
+  --panel-hover: #f4f4f1;
+  --surface: #ffffff;
   --text: #292723;
   --muted: #77736b;
   --faint: #a7a198;
@@ -1351,6 +1351,7 @@ html.is-resizing * {
   color: var(--text);
   font-family: Georgia, "Noto Serif SC", serif;
   font-size: var(--chat-font-size);
+  font-variant-numeric: lining-nums proportional-nums;
   line-height: 1.72;
 }
 
