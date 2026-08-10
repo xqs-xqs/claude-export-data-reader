@@ -14,6 +14,7 @@ const ARCHIVE_LIMITS = Object.freeze({
   users: 1_000,
   conversations: 100_000,
   memories: 1_000,
+  memoryFiles: 100_000,
   messages: 2_000_000,
   jsonDepth: 100,
   jsonNodes: 2_000_000,
@@ -506,6 +507,14 @@ function normalizeMemoryRecord(value, label) {
     memory.project_memories === null
       ? {}
       : requireRecord(memory.project_memories, `${label}.project_memories`);
+  const memoryFileSource =
+    memory.memory_files === undefined || memory.memory_files === null
+      ? []
+      : requireArray(
+          memory.memory_files,
+          `${label}.memory_files`,
+          ARCHIVE_LIMITS.memoryFiles
+        );
   return {
     account_uuid: optionalString(
       memory.account_uuid,
@@ -526,6 +535,24 @@ function normalizeMemoryRecord(value, label) {
         )
       ])
     ),
+    memory_files: memoryFileSource.map((value, index) => {
+      const fileLabel = `${label}.memory_files[${index}]`;
+      const file = requireRecord(value, fileLabel);
+      return {
+        path: requiredString(file.path, `${fileLabel}.path`, 65_536),
+        content:
+          optionalString(
+            file.content,
+            `${fileLabel}.content`,
+            ARCHIVE_LIMITS.stringCharacters
+          ) || "",
+        updated_at: optionalString(
+          file.updated_at,
+          `${fileLabel}.updated_at`,
+          256
+        )
+      };
+    }),
     imported_from: optionalString(
       memory.imported_from,
       `${label}.imported_from`,
@@ -843,6 +870,7 @@ async function parseArchive(filePath) {
           (accounts.length === 1 ? accounts[0].uuid : undefined),
         conversations_memory: memory.conversations_memory,
         project_memories: memory.project_memories,
+        memory_files: memory.memory_files,
         imported_from: path.basename(filePath),
         imported_at: importedAt,
         source_sha256: sha256
@@ -852,6 +880,7 @@ async function parseArchive(filePath) {
       (memory) =>
         memory.account_uuid &&
         (memory.conversations_memory !== undefined ||
+          memory.memory_files.length > 0 ||
           Object.keys(memory.project_memories).length > 0)
     );
 

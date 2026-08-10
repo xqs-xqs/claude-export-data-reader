@@ -85,10 +85,17 @@ export interface Project {
   }>;
 }
 
+export interface MemoryFile {
+  path: string;
+  content: string;
+  updated_at?: string;
+}
+
 export interface MemoryRecord {
   account_uuid: string;
   conversations_memory?: string;
   project_memories: Record<string, string>;
+  memory_files?: MemoryFile[];
   imported_from?: string;
   imported_at?: string;
   source_sha256?: string;

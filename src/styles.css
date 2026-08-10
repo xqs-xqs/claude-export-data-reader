@@ -1373,6 +1373,209 @@ html.is-resizing * {
   margin-top: 0;
 }
 
+.memory-page.structured-memory-page {
+  width: min(100% - 48px, 980px);
+}
+
+.structured-memory-list,
+.structured-memory-detail {
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  font-size: var(--chat-font-size);
+}
+
+.structured-memory-group {
+  scroll-margin-top: 86px;
+}
+
+.structured-memory-group + .structured-memory-group {
+  margin-top: 32px;
+}
+
+.structured-memory-group > h2 {
+  margin: 0;
+  padding: 0 0 13px;
+  border-bottom: 1px solid var(--line);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.structured-memory-rows {
+  display: grid;
+}
+
+.structured-memory-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(0, 1.25fr) auto;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  min-height: 59px;
+  padding: 0 1px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.structured-memory-row:hover {
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+
+.structured-memory-row:focus-visible {
+  border-radius: 5px;
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.structured-memory-row strong,
+.structured-memory-summary,
+.structured-memory-updated {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.structured-memory-row strong {
+  font-size: calc(var(--chat-font-size) - 2px);
+  font-weight: 450;
+}
+
+.structured-memory-summary {
+  color: var(--muted);
+  font-size: calc(var(--chat-font-size) - 3px);
+}
+
+.structured-memory-updated {
+  color: var(--faint);
+  font-size: calc(var(--chat-font-size) - 3.5px);
+}
+
+.structured-memory-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 42px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font-size: calc(var(--chat-font-size) - 2px);
+  cursor: pointer;
+}
+
+.structured-memory-back:hover {
+  background: var(--active);
+}
+
+.structured-memory-back:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.structured-memory-back svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.8;
+}
+
+.structured-memory-detail-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 28px;
+}
+
+.structured-memory-detail-heading h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.structured-memory-detail-heading span {
+  flex: none;
+  color: var(--faint);
+  font-size: calc(var(--chat-font-size) - 3.5px);
+}
+
+.structured-memory-section + .structured-memory-section {
+  margin-top: 30px;
+}
+
+.structured-memory-section > h3 {
+  margin: 0 0 11px;
+  font-size: calc(var(--chat-font-size) - 2px);
+  font-weight: 600;
+}
+
+.structured-memory-section > p {
+  margin: 0;
+  font-size: var(--chat-font-size);
+  line-height: 1.65;
+}
+
+.structured-memory-section .markdown {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  font-size: var(--chat-font-size);
+  line-height: 1.65;
+}
+
+.structured-memory-section .markdown ul,
+.structured-memory-section .markdown ol {
+  padding-left: 24px;
+}
+
+.structured-memory-no-details {
+  color: var(--muted);
+}
+
+.structured-memory-outline nav {
+  padding: 0 10px 20px;
+}
+
+.structured-memory-outline-group + .structured-memory-outline-group {
+  margin-top: 18px;
+}
+
+.structured-memory-outline-group > span {
+  display: block;
+  padding: 0 10px 6px;
+  color: var(--muted);
+  font-size: calc(var(--outline-font-size) - 2px);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.structured-memory-outline-group button {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  overflow: hidden;
+  color: var(--muted);
+  background: transparent;
+  font-size: var(--outline-font-size);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.structured-memory-outline-group button:hover,
+.structured-memory-outline-group button.is-active {
+  color: var(--text);
+  background: var(--active);
+}
+
 .memory-empty {
   display: grid;
   min-height: 260px;

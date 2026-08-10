@@ -13,9 +13,13 @@ import type {
 import type { Account, Conversation, HeadingEntry, Library } from "./types";
 import { dateLabel, extractHeadings, visibleMessages } from "./conversation";
 import MessageView from "./MessageView";
-import MemoryPage, { MemoryOutline } from "./MemoryView";
+import MemoryPage, {
+  MemoryOutline,
+  StructuredMemoryOutline
+} from "./MemoryView";
 import {
   prepareMemoryDocument,
+  prepareStructuredMemoryFiles,
   type MemoryProjectOption,
   type MemoryScope
 } from "./memory";
@@ -957,7 +961,7 @@ export default function App() {
   const [primaryView, setPrimaryView] =
     useState<PrimaryView>("conversation");
   const [memoryScope, setMemoryScope] = useState<MemoryScope>("account");
-  const [selectedMemoryAccountUuid, setSelectedMemoryAccountUuid] =
+  const [selectedMemoryFilePath, setSelectedMemoryFilePath] =
     useState<string>();
   const [selectedProjectMemoryUuid, setSelectedProjectMemoryUuid] =
     useState<string>();
@@ -1044,26 +1048,11 @@ export default function App() {
     }
     return Array.from(latestByAccount.values());
   }, [library.memories]);
-  const memoryAccounts = useMemo(
-    () =>
-      memoryRecords.map(
-        (memory) =>
-          library.accounts.find(
-            (account) => account.uuid === memory.account_uuid
-          ) ||
-          ({
-            uuid: memory.account_uuid,
-            full_name: "未命名账户"
-          } satisfies Account)
-      ),
-    [library.accounts, memoryRecords]
-  );
   const activeMemory =
     memoryRecords.find(
-      (memory) => memory.account_uuid === selectedMemoryAccountUuid
-    ) || memoryRecords[0];
-  const activeMemoryAccountUuid =
-    activeMemory?.account_uuid || selectedMemoryAccountUuid;
+      (memory) => memory.account_uuid === activeAccountUuid
+    );
+  const activeMemoryAccountUuid = activeAccountUuid;
   const memoryProjectOptions = useMemo<MemoryProjectOption[]>(
     () =>
       Object.keys(activeMemory?.project_memories || {}).map((projectUuid) => {
@@ -1089,6 +1078,19 @@ export default function App() {
       : activeProjectMemoryUuid
         ? activeMemory?.project_memories[activeProjectMemoryUuid]
         : undefined;
+  const structuredMemory = useMemo(
+    () => prepareStructuredMemoryFiles(activeMemory?.memory_files),
+    [activeMemory?.memory_files]
+  );
+  const structuredAccountMode = Boolean(
+    memoryScope === "account" &&
+      !activeMemory?.conversations_memory?.trim() &&
+      structuredMemory.entries.length
+  );
+  const hasActiveAccountMemory = Boolean(
+    activeMemory?.conversations_memory?.trim() ||
+      activeMemory?.memory_files?.some((file) => file.content.trim())
+  );
   const memoryAnchorPrefix = `memory-${
     activeMemoryAccountUuid || "none"
   }-${memoryScope}-${activeProjectMemoryUuid || "account"}`;
@@ -1229,13 +1231,6 @@ export default function App() {
         : projectUuids[0]
     );
     setMemoryScope((current) => {
-      if (
-        current === "account" &&
-        !activeMemory?.conversations_memory &&
-        projectUuids.length
-      ) {
-        return "project";
-      }
       if (current === "project" && !projectUuids.length) return "account";
       return current;
     });
@@ -1344,7 +1339,9 @@ export default function App() {
   );
   const navigationHeadings =
     primaryView === "memory"
-      ? memoryDocument.headings
+      ? structuredAccountMode
+        ? []
+        : memoryDocument.headings
       : conversationHeadings;
 
   useEffect(() => {
@@ -1548,6 +1545,7 @@ export default function App() {
         setSearchTarget(undefined);
         setConversationFindOpen(false);
         setConversationFindQuery("");
+        setSelectedMemoryFilePath(undefined);
         setSelectedKey(
           nextConversations[0]
             ? conversationKey(nextConversations[0])
@@ -1613,6 +1611,7 @@ export default function App() {
     setSearchTarget(undefined);
     setConversationFindOpen(false);
     setConversationFindQuery("");
+    setSelectedMemoryFilePath(undefined);
     setSelectedProjectMemoryUuid(undefined);
 
     if (primaryView === "memory" && !nextMemory && nextConversations.length) {
@@ -1679,41 +1678,31 @@ export default function App() {
 
   function openMemory() {
     setPrimaryView("memory");
+    setSelectedMemoryFilePath(undefined);
     setSearchTarget(undefined);
     setConversationFindOpen(false);
     setConversationFindQuery("");
-    const preferredAccountUuid =
-      selectedConversation?.account_uuid || activeMemoryAccountUuid;
-    const preferredMemory = memoryRecords.find(
-      (memory) => memory.account_uuid === preferredAccountUuid
-    );
-    if (preferredMemory) {
-      setSelectedMemoryAccountUuid(preferredMemory.account_uuid);
+    if (!hasActiveAccountMemory && memoryProjectOptions.length) {
+      setMemoryScope("project");
     }
     setFontMenuOpen(false);
     scrollMainToTop();
   }
 
-  function selectMemoryAccount(accountUuid: string) {
-    const memory = memoryRecords.find(
-      (item) => item.account_uuid === accountUuid
-    );
-    setSelectedMemoryAccountUuid(accountUuid);
-    const projectUuid = Object.keys(memory?.project_memories || {})[0];
-    setSelectedProjectMemoryUuid(projectUuid);
-    setMemoryScope(
-      memory?.conversations_memory ? "account" : projectUuid ? "project" : "account"
-    );
-    scrollMainToTop();
-  }
-
   function selectMemoryScope(scope: MemoryScope) {
     setMemoryScope(scope);
+    setSelectedMemoryFilePath(undefined);
     scrollMainToTop();
   }
 
   function selectProjectMemory(projectUuid: string) {
     setSelectedProjectMemoryUuid(projectUuid);
+    setSelectedMemoryFilePath(undefined);
+    scrollMainToTop();
+  }
+
+  function selectMemoryFile(path: string | undefined) {
+    setSelectedMemoryFilePath(path);
     scrollMainToTop();
   }
 
@@ -2112,14 +2101,16 @@ export default function App() {
         <div className="conversation-scroll">
           {primaryView === "memory" ? (
             <MemoryPage
-              accounts={memoryAccounts}
+              account={activeAccount}
               document={memoryDocument}
               memory={activeMemory}
               projectOptions={memoryProjectOptions}
               scope={memoryScope}
-              selectedAccountUuid={activeMemoryAccountUuid}
+              structuredAccountMode={structuredAccountMode}
+              structuredMemory={structuredMemory}
+              selectedMemoryFilePath={selectedMemoryFilePath}
               selectedProjectUuid={activeProjectMemoryUuid}
-              onAccountChange={selectMemoryAccount}
+              onMemoryFileChange={selectMemoryFile}
               onProjectChange={selectProjectMemory}
               onScopeChange={selectMemoryScope}
             />
@@ -2182,12 +2173,21 @@ export default function App() {
       )}
       {outlineOpen && (
         primaryView === "memory" ? (
-          <MemoryOutline
-            headings={memoryDocument.headings}
-            activeId={activeHeading}
-            onNavigate={navigateToHeading}
-            onClose={() => setOutlineOpen(false)}
-          />
+          structuredAccountMode ? (
+            <StructuredMemoryOutline
+              memory={structuredMemory}
+              selectedPath={selectedMemoryFilePath}
+              onSelect={selectMemoryFile}
+              onClose={() => setOutlineOpen(false)}
+            />
+          ) : (
+            <MemoryOutline
+              headings={memoryDocument.headings}
+              activeId={activeHeading}
+              onNavigate={navigateToHeading}
+              onClose={() => setOutlineOpen(false)}
+            />
+          )
         ) : (
           <Outline
             headings={conversationHeadings}
