@@ -108,6 +108,10 @@ function conversationKey(conversation: Conversation) {
   return `${conversation.account_uuid}:${conversation.uuid}`;
 }
 
+function accountDisplayName(account: Account | undefined) {
+  return account?.full_name || account?.email_address || "未命名账户";
+}
+
 function HighlightedSearchText({
   text,
   query
@@ -240,6 +244,7 @@ function initialFontSettings(): FontSettings {
 
 function Sidebar({
   library,
+  activeAccountUuid,
   pinnedConversations,
   recentConversations,
   pinnedKeys,
@@ -250,10 +255,12 @@ function Sidebar({
   onTogglePinned,
   onOpenMemory,
   onOpenSearch,
+  onSelectAccount,
   onImport,
   importing
 }: {
   library: Library;
+  activeAccountUuid?: string;
   pinnedConversations: Conversation[];
   recentConversations: Conversation[];
   pinnedKeys: Set<string>;
@@ -264,9 +271,42 @@ function Sidebar({
   onTogglePinned: (conversation: Conversation) => void;
   onOpenMemory: () => void;
   onOpenSearch: () => void;
+  onSelectAccount: (accountUuid: string) => void;
   onImport: () => void;
   importing: boolean;
 }) {
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountSwitcherRef = useRef<HTMLDivElement>(null);
+  const activeAccount = library.accounts.find(
+    (account) => account.uuid === activeAccountUuid
+  );
+  const activeAccountName = accountDisplayName(activeAccount);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+
+    function closeAccountMenu(event: PointerEvent | KeyboardEvent) {
+      if (event instanceof KeyboardEvent) {
+        if (event.key === "Escape") setAccountMenuOpen(false);
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        !accountSwitcherRef.current?.contains(target)
+      ) {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", closeAccountMenu);
+    window.addEventListener("keydown", closeAccountMenu);
+    return () => {
+      window.removeEventListener("pointerdown", closeAccountMenu);
+      window.removeEventListener("keydown", closeAccountMenu);
+    };
+  }, [accountMenuOpen]);
+
   const renderConversation = (conversation: Conversation) => {
     const key = conversationKey(conversation);
     const pinned = pinnedKeys.has(key);
@@ -320,11 +360,11 @@ function Sidebar({
       <button
         className="search search-launch"
         onClick={onOpenSearch}
-        aria-label="搜索所有对话"
-        title="搜索所有对话（Ctrl + Shift + F）"
+        aria-label="搜索当前账户对话"
+        title="搜索当前账户对话（Ctrl + Shift + F）"
       >
         <SearchIcon />
-        <span>搜索所有对话</span>
+        <span>搜索当前账户对话</span>
         <kbd>Ctrl ⇧ F</kbd>
       </button>
 
@@ -362,18 +402,67 @@ function Sidebar({
         </section>
       </div>
 
-      <div className="account-card">
-        <div className="avatar">
-          {(library.accounts[0]?.full_name || "本").slice(0, 1)}
-        </div>
-        <div>
-          <strong>{library.accounts[0]?.full_name || "本地阅读器"}</strong>
-          <span>
-            {library.accounts.length
-              ? `${library.accounts.length} 个账户 · ${library.imports.length} 次导入`
-              : "尚未导入数据"}
+      <div className="account-switcher" ref={accountSwitcherRef}>
+        {accountMenuOpen && library.accounts.length > 1 && (
+          <div className="account-menu" role="menu" aria-label="切换账户">
+            <div className="account-menu-title">切换账户</div>
+            {library.accounts.map((account) => {
+              const selected = account.uuid === activeAccountUuid;
+              return (
+                <button
+                  type="button"
+                  className={`account-menu-item ${selected ? "is-active" : ""}`}
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  key={account.uuid}
+                  onClick={() => {
+                    onSelectAccount(account.uuid);
+                    setAccountMenuOpen(false);
+                  }}
+                >
+                  <span className="avatar account-menu-avatar">
+                    {accountDisplayName(account).slice(0, 1)}
+                  </span>
+                  <span className="account-menu-copy">
+                    <strong>{accountDisplayName(account)}</strong>
+                    <small>{account.email_address || "未提供邮箱"}</small>
+                  </span>
+                  <span className="account-menu-check" aria-hidden="true">
+                    {selected ? "✓" : ""}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <button
+          type="button"
+          className={`account-card ${accountMenuOpen ? "is-open" : ""}`}
+          onClick={() =>
+            library.accounts.length > 1 &&
+            setAccountMenuOpen((value) => !value)
+          }
+          disabled={library.accounts.length < 2}
+          aria-haspopup="menu"
+          aria-expanded={accountMenuOpen}
+          title={library.accounts.length > 1 ? "切换账户" : undefined}
+        >
+          <span className="avatar">
+            {(activeAccount ? activeAccountName : "本").slice(0, 1)}
           </span>
-        </div>
+          <span className="account-card-copy">
+            <strong>{activeAccount ? activeAccountName : "本地阅读器"}</strong>
+            <span>
+              {library.accounts.length
+                ? `${library.accounts.length} 个账户 · ${library.imports.length} 次导入`
+                : "尚未导入数据"}
+            </span>
+          </span>
+          {library.accounts.length > 1 && (
+            <ChevronIcon className="account-card-chevron" />
+          )}
+        </button>
       </div>
     </aside>
   );
@@ -383,6 +472,7 @@ function GlobalSearchDialog({
   open,
   query,
   results,
+  accountName,
   onQueryChange,
   onSelectConversation,
   onSelectMessage,
@@ -391,6 +481,7 @@ function GlobalSearchDialog({
   open: boolean;
   query: string;
   results: ReturnType<typeof searchConversationIndex>;
+  accountName?: string;
   onQueryChange: (query: string) => void;
   onSelectConversation: (conversation: Conversation) => void;
   onSelectMessage: (
@@ -510,9 +601,9 @@ function GlobalSearchDialog({
     >
       <header className="global-search-header">
         <div>
-          <h2 id="global-search-title">搜索所有对话</h2>
+          <h2 id="global-search-title">搜索当前账户</h2>
           <p id="global-search-description">
-            搜索会话标题、你的提问和 Claude 的回答
+            在{accountName ? `“${accountName}”` : "当前账户"}中搜索会话标题、你的提问和 Claude 的回答
           </p>
         </div>
         <button
@@ -533,7 +624,7 @@ function GlobalSearchDialog({
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="输入关键词"
-          aria-label="搜索所有对话"
+          aria-label="搜索当前账户对话"
         />
         {searching && (
           <span className="global-search-count" role="status" aria-live="polite">
@@ -545,12 +636,12 @@ function GlobalSearchDialog({
       <div
         className="global-search-results"
         role="region"
-        aria-label="全局搜索结果"
+        aria-label="当前账户搜索结果"
       >
         {!searching ? (
           <div className="global-search-placeholder">
             <SearchIcon />
-            <strong>从全部归档中查找</strong>
+            <strong>从当前账户归档中查找</strong>
             <span>输入标题或消息正文中的关键词。</span>
           </div>
         ) : results.groups.length ? (
@@ -859,6 +950,9 @@ function PanelResizer({
 
 export default function App() {
   const [library, setLibrary] = useState<Library>(EMPTY_LIBRARY);
+  const [selectedAccountUuid, setSelectedAccountUuid] = useState<string | undefined>(
+    () => localStorage.getItem("selected-account-uuid") || undefined
+  );
   const [selectedKey, setSelectedKey] = useState<string>();
   const [primaryView, setPrimaryView] =
     useState<PrimaryView>("conversation");
@@ -917,6 +1011,23 @@ export default function App() {
     () => new Set()
   );
   const [notice, setNotice] = useState<string>();
+  const activeAccount = useMemo(
+    () =>
+      library.accounts.find(
+        (account) => account.uuid === selectedAccountUuid
+      ) || library.accounts[0],
+    [library.accounts, selectedAccountUuid]
+  );
+  const activeAccountUuid = activeAccount?.uuid;
+  const accountConversations = useMemo(
+    () =>
+      activeAccountUuid
+        ? library.conversations.filter(
+            (conversation) => conversation.account_uuid === activeAccountUuid
+          )
+        : [],
+    [activeAccountUuid, library.conversations]
+  );
   const memoryRecords = useMemo(() => {
     const latestByAccount = new Map<string, Library["memories"][number]>();
     for (const memory of library.memories || []) {
@@ -986,8 +1097,8 @@ export default function App() {
     [memoryAnchorPrefix, memoryText]
   );
   const searchIndex = useMemo(
-    () => buildConversationSearchIndex(library.conversations),
-    [library.conversations]
+    () => buildConversationSearchIndex(accountConversations),
+    [accountConversations]
   );
   const conversations = useMemo(
     () => searchIndex.map((entry) => entry.conversation),
@@ -1073,17 +1184,42 @@ export default function App() {
   }, [fontSettings]);
 
   useEffect(() => {
-    if (!memoryRecords.length) {
-      setSelectedMemoryAccountUuid(undefined);
+    if (!library.accounts.length) return;
+
+    setSelectedAccountUuid((current) => {
+      const next = library.accounts.some((account) => account.uuid === current)
+        ? current
+        : library.accounts[0].uuid;
+      if (next) localStorage.setItem("selected-account-uuid", next);
+      return next;
+    });
+  }, [library.accounts]);
+
+  useEffect(() => {
+    if (!activeAccountUuid) {
+      setSelectedKey(undefined);
       return;
     }
-    setSelectedMemoryAccountUuid((current) =>
-      current &&
-      memoryRecords.some((memory) => memory.account_uuid === current)
-        ? current
-        : memoryRecords[0].account_uuid
-    );
-  }, [memoryRecords]);
+
+    setSelectedKey((current) => {
+      const currentBelongsToAccount = accountConversations.some(
+        (conversation) => conversationKey(conversation) === current
+      );
+      if (currentBelongsToAccount) return current;
+      const first = accountConversations[0];
+      return first ? conversationKey(first) : undefined;
+    });
+  }, [accountConversations, activeAccountUuid]);
+
+  useEffect(() => {
+    if (
+      primaryView === "conversation" &&
+      !accountConversations.length &&
+      activeMemory
+    ) {
+      setPrimaryView("memory");
+    }
+  }, [accountConversations.length, activeMemory, primaryView]);
 
   useEffect(() => {
     const projectUuids = memoryProjectOptions.map((project) => project.uuid);
@@ -1109,16 +1245,9 @@ export default function App() {
     if (window.readerAPI) {
       window.readerAPI.getLibrary().then((nextLibrary) => {
         setLibrary(nextLibrary);
-        const first = nextLibrary.conversations[0];
-        setSelectedKey(first ? `${first.account_uuid}:${first.uuid}` : undefined);
-        if (!first && nextLibrary.memories?.length) {
-          setPrimaryView("memory");
-        }
       });
     } else if (new URLSearchParams(window.location.search).has("demo")) {
       setLibrary(DEMO_LIBRARY);
-      const first = DEMO_LIBRARY.conversations[0];
-      setSelectedKey(`${first.account_uuid}:${first.uuid}`);
     }
   }, []);
 
@@ -1184,9 +1313,10 @@ export default function App() {
     () =>
       library.conversations.find(
         (conversation) =>
+          conversation.account_uuid === activeAccountUuid &&
           `${conversation.account_uuid}:${conversation.uuid}` === selectedKey
       ),
-    [library.conversations, selectedKey]
+    [activeAccountUuid, library.conversations, selectedKey]
   );
   const messages = useMemo(
     () => visibleMessages(selectedConversation),
@@ -1382,26 +1512,51 @@ export default function App() {
     setImporting(true);
     setNotice(undefined);
     try {
+      const existingAccountUuids = new Set(
+        library.accounts.map((account) => account.uuid)
+      );
       const result = await window.readerAPI.importArchive();
       if (result.canceled) return;
       if (result.library) {
+        const newlyImportedAccount = result.library.accounts.find(
+          (account) => !existingAccountUuids.has(account.uuid)
+        );
+        const nextAccount =
+          newlyImportedAccount ||
+          result.library.accounts.find(
+            (account) => account.uuid === activeAccountUuid
+          ) ||
+          result.library.accounts[0];
+        const nextConversations = nextAccount
+          ? result.library.conversations.filter(
+              (conversation) => conversation.account_uuid === nextAccount.uuid
+            )
+          : [];
+        const nextMemory = nextAccount
+          ? result.library.memories.some(
+              (memory) => memory.account_uuid === nextAccount.uuid
+            )
+          : false;
+
         setLibrary(result.library);
+        setSelectedAccountUuid(nextAccount?.uuid);
+        if (nextAccount?.uuid) {
+          localStorage.setItem("selected-account-uuid", nextAccount.uuid);
+        }
         setGlobalSearchQuery("");
         setGlobalSearchOpen(false);
         setSearchTarget(undefined);
         setConversationFindOpen(false);
         setConversationFindQuery("");
-        setSelectedKey((current) => {
-          if (current) return current;
-          const first = result.library?.conversations[0];
-          return first ? `${first.account_uuid}:${first.uuid}` : undefined;
-        });
-        if (
-          !selectedKey &&
-          !result.library.conversations.length &&
-          result.library.memories?.length
-        ) {
+        setSelectedKey(
+          nextConversations[0]
+            ? conversationKey(nextConversations[0])
+            : undefined
+        );
+        if (!nextConversations.length && nextMemory) {
           setPrimaryView("memory");
+        } else if (nextConversations.length) {
+          setPrimaryView("conversation");
         }
       }
       setNotice(
@@ -1423,6 +1578,7 @@ export default function App() {
   }
 
   function selectConversation(conversation: Conversation) {
+    if (conversation.account_uuid !== activeAccountUuid) return;
     setPrimaryView("conversation");
     setSelectedKey(conversationKey(conversation));
     setSearchTarget(undefined);
@@ -1431,6 +1587,46 @@ export default function App() {
     window.requestAnimationFrame(() => {
       document.querySelector(".conversation-scroll")?.scrollTo({ top: 0 });
     });
+  }
+
+  function selectAccount(accountUuid: string) {
+    if (
+      accountUuid === activeAccountUuid ||
+      !library.accounts.some((account) => account.uuid === accountUuid)
+    ) {
+      return;
+    }
+
+    const nextConversations = library.conversations.filter(
+      (conversation) => conversation.account_uuid === accountUuid
+    );
+    const nextMemory = memoryRecords.find(
+      (memory) => memory.account_uuid === accountUuid
+    );
+    setSelectedAccountUuid(accountUuid);
+    localStorage.setItem("selected-account-uuid", accountUuid);
+    setSelectedKey(
+      nextConversations[0] ? conversationKey(nextConversations[0]) : undefined
+    );
+    setGlobalSearchQuery("");
+    setGlobalSearchOpen(false);
+    setSearchTarget(undefined);
+    setConversationFindOpen(false);
+    setConversationFindQuery("");
+    setSelectedProjectMemoryUuid(undefined);
+
+    if (primaryView === "memory" && !nextMemory && nextConversations.length) {
+      setPrimaryView("conversation");
+    } else if (
+      primaryView === "conversation" &&
+      !nextConversations.length &&
+      nextMemory
+    ) {
+      setPrimaryView("memory");
+    }
+
+    setFontMenuOpen(false);
+    scrollMainToTop();
   }
 
   async function toggleConversationPinned(conversation: Conversation) {
@@ -1725,6 +1921,7 @@ export default function App() {
       {sidebarOpen && (
         <Sidebar
           library={library}
+          activeAccountUuid={activeAccountUuid}
           pinnedConversations={pinnedConversations}
           recentConversations={recentConversations}
           pinnedKeys={pinnedKeys}
@@ -1737,6 +1934,7 @@ export default function App() {
           onTogglePinned={toggleConversationPinned}
           onOpenMemory={openMemory}
           onOpenSearch={openGlobalSearch}
+          onSelectAccount={selectAccount}
           onImport={importArchive}
           importing={importing}
         />
@@ -2004,6 +2202,7 @@ export default function App() {
         open={globalSearchOpen}
         query={globalSearchQuery}
         results={globalSearchResults}
+        accountName={activeAccount ? accountDisplayName(activeAccount) : undefined}
         onQueryChange={setGlobalSearchQuery}
         onSelectConversation={(conversation) => {
           selectConversation(conversation);

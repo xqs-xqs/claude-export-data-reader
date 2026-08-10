@@ -226,8 +226,8 @@ html.is-resizing * {
 
 .brand strong,
 .brand span,
-.account-card strong,
-.account-card span {
+.account-card-copy strong,
+.account-card-copy span {
   display: block;
 }
 
@@ -788,19 +788,45 @@ html.is-resizing * {
   font-size: calc(var(--sidebar-font-size) - 2.5px);
 }
 
+.account-switcher {
+  position: relative;
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
 .account-card {
   display: flex;
   align-items: center;
   gap: 9px;
+  width: 100%;
   min-height: 48px;
-  margin-top: 8px;
   padding: 7px 8px;
-  border-top: 1px solid var(--line);
+  border: 0;
+  border-radius: 9px;
   overflow: hidden;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.account-card > div:last-child {
+.account-card:not(:disabled):hover,
+.account-card.is-open {
+  background: var(--panel-hover);
+}
+
+.account-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: -2px;
+}
+
+.account-card:disabled {
+  cursor: default;
+}
+
+.account-card-copy {
   min-width: 0;
+  flex: 1;
 }
 
 .account-card strong,
@@ -810,8 +836,105 @@ html.is-resizing * {
   white-space: nowrap;
 }
 
-.account-card strong {
+.account-card-copy strong {
   font-size: 12px;
+}
+
+.account-card-chevron {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  color: var(--faint);
+  transform: rotate(-90deg);
+  transition: transform 150ms ease;
+}
+
+.account-card.is-open .account-card-chevron {
+  transform: rotate(90deg);
+}
+
+.account-menu {
+  position: absolute;
+  z-index: 30;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  max-height: min(360px, 55vh);
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 14px 38px rgba(39, 34, 26, 0.14);
+}
+
+.account-menu-title {
+  padding: 6px 9px 8px;
+  color: var(--muted);
+  font-size: calc(var(--sidebar-font-size) - 1.5px);
+  font-weight: 700;
+}
+
+.account-menu-item {
+  display: grid;
+  grid-template-columns: 29px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-menu-item:hover,
+.account-menu-item:focus-visible,
+.account-menu-item.is-active {
+  background: var(--panel-hover);
+}
+
+.account-menu-item:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: -2px;
+}
+
+.account-menu-copy {
+  min-width: 0;
+}
+
+.account-menu-copy strong,
+.account-menu-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu-copy strong {
+  color: var(--text);
+  font-size: calc(var(--sidebar-font-size) - 0.5px);
+}
+
+.account-menu-copy small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: calc(var(--sidebar-font-size) - 2.5px);
+}
+
+.account-menu-check {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.account-menu-avatar {
+  width: 27px;
+  height: 27px;
 }
 
 .avatar {
