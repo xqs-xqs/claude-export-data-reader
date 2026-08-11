@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ContentBlock, Message } from "./types";
 import MarkdownBlock from "./MarkdownBlock";
 import { ChevronIcon, FileIcon } from "./icons";
@@ -336,6 +336,11 @@ export default function MessageView({
   message: Message;
   highlightQuery?: string;
 }) {
+  const isHuman = message.sender === "human";
+  const [humanMessageExpanded, setHumanMessageExpanded] = useState(false);
+  const [humanMessageOverflows, setHumanMessageOverflows] = useState(false);
+  const humanMessageClipRef = useRef<HTMLDivElement>(null);
+  const humanMessageBodyRef = useRef<HTMLDivElement>(null);
   const blocks = message.content || [];
   const contentParts = useMemo(() => groupContentBlocks(blocks), [blocks]);
   const filePreviews = useMemo(
@@ -352,6 +357,9 @@ export default function MessageView({
   const hasVisibleAttachments = (message.attachments || []).some(
     (attachment) => attachment.extracted_content
   );
+  const forceHumanMessageOpen = isHuman && Boolean(highlightQuery);
+  const humanMessageCollapsed =
+    isHuman && !humanMessageExpanded && !forceHumanMessageOpen;
   const fileGrid =
     filePreviews.length > 0 ? (
       <div className="file-grid">
@@ -360,6 +368,36 @@ export default function MessageView({
         ))}
       </div>
     ) : null;
+
+  useEffect(() => {
+    setHumanMessageExpanded(false);
+    setHumanMessageOverflows(false);
+  }, [message.uuid]);
+
+  useLayoutEffect(() => {
+    if (!humanMessageCollapsed) return;
+
+    const clip = humanMessageClipRef.current;
+    const body = humanMessageBodyRef.current;
+    if (!clip || !body) return;
+
+    let cancelled = false;
+    const measure = () => {
+      if (cancelled) return;
+      setHumanMessageOverflows(body.scrollHeight > clip.clientHeight + 1);
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(clip);
+    observer.observe(body);
+    void document.fonts?.ready.then(measure);
+
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [humanMessageCollapsed, visibleBlockCount, hasFallbackText]);
 
   if (
     visibleBlockCount === 0 &&
@@ -370,6 +408,36 @@ export default function MessageView({
     return null;
   }
 
+  const renderedMessageBody = (
+    <>
+      {visibleBlockCount > 0
+        ? contentParts.map((part) =>
+            part.kind === "process" ? (
+              <ProcessGroup
+                key={`process-${message.uuid}-${part.items[0].index}`}
+                message={message}
+                items={part.items}
+              />
+            ) : (
+              <Content
+                key={`${message.uuid}-${part.item.index}`}
+                message={message}
+                block={part.item.block}
+                blockIndex={part.item.index}
+                searchQuery={highlightQuery}
+              />
+            )
+          )
+        : hasFallbackText && message.text && (
+            <MarkdownBlock
+              text={message.text}
+              anchorPrefix={`heading-${message.uuid}-fallback`}
+              searchQuery={highlightQuery}
+            />
+          )}
+    </>
+  );
+
   return (
     <article
       className={`message message-${message.sender} ${
@@ -379,31 +447,34 @@ export default function MessageView({
     >
       {message.sender === "human" && <div className="sender-label">你</div>}
       <div className="message-content">
-        {visibleBlockCount > 0
-          ? contentParts.map((part) =>
-              part.kind === "process" ? (
-                <ProcessGroup
-                  key={`process-${message.uuid}-${part.items[0].index}`}
-                  message={message}
-                  items={part.items}
-                />
-              ) : (
-                <Content
-                  key={`${message.uuid}-${part.item.index}`}
-                  message={message}
-                  block={part.item.block}
-                  blockIndex={part.item.index}
-                  searchQuery={highlightQuery}
-                />
-              )
-            )
-          : hasFallbackText && message.text && (
-              <MarkdownBlock
-                text={message.text}
-                anchorPrefix={`heading-${message.uuid}-fallback`}
-                searchQuery={highlightQuery}
-              />
+        {isHuman ? (
+          <>
+            <div
+              ref={humanMessageClipRef}
+              id={`human-message-${message.uuid}`}
+              className={`human-message-clip ${
+                humanMessageCollapsed ? "is-collapsed" : ""
+              } ${humanMessageOverflows ? "has-overflow" : ""}`}
+            >
+              <div ref={humanMessageBodyRef} className="human-message-body">
+                {renderedMessageBody}
+              </div>
+            </div>
+            {humanMessageOverflows && !forceHumanMessageOpen && (
+              <button
+                type="button"
+                className="human-message-toggle"
+                aria-controls={`human-message-${message.uuid}`}
+                aria-expanded={humanMessageExpanded}
+                onClick={() => setHumanMessageExpanded((value) => !value)}
+              >
+                {humanMessageExpanded ? "Show less" : "Show more"}
+              </button>
             )}
+          </>
+        ) : (
+          renderedMessageBody
+        )}
 
         {message.sender === "human" && fileGrid}
 
