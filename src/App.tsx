@@ -1953,7 +1953,25 @@ export default function App() {
           >
             <MenuIcon />
           </button>
-          <div aria-hidden="true" />
+          <div
+            className="topbar-title"
+            role={primaryView === "conversation" ? "heading" : undefined}
+            aria-level={primaryView === "conversation" ? 1 : undefined}
+            tabIndex={primaryView === "conversation" ? -1 : undefined}
+            title={
+              primaryView === "conversation" && selectedConversation
+                ? conversationDisplayTitle(selectedConversation)
+                : primaryView === "memory"
+                  ? "Memory"
+                  : undefined
+            }
+          >
+            {primaryView === "conversation" && selectedConversation
+              ? conversationDisplayTitle(selectedConversation)
+              : primaryView === "memory"
+                ? "Memory"
+                : ""}
+          </div>
           <div className="topbar-actions">
             {primaryView === "conversation" && selectedConversation && (
               <button
@@ -2116,9 +2134,6 @@ export default function App() {
             />
           ) : selectedConversation ? (
             <div className="conversation">
-              <div className="conversation-heading">
-                <h1>{conversationDisplayTitle(selectedConversation)}</h1>
-              </div>
               {messages.map((message) => (
                 <MessageView
                   key={message.uuid}
@@ -2208,10 +2223,8 @@ export default function App() {
           selectConversation(conversation);
           setGlobalSearchOpen(false);
           window.requestAnimationFrame(() => {
-            const heading =
-              document.querySelector<HTMLElement>(".conversation-heading h1");
+            const heading = document.querySelector<HTMLElement>(".topbar-title");
             if (!heading) return;
-            heading.tabIndex = -1;
             heading.focus({ preventScroll: true });
           });
         }}

@@ -240,7 +240,7 @@ function createWindow() {
     height: 920,
     minWidth: 980,
     minHeight: 680,
-    backgroundColor: "#f7f6f2",
+    backgroundColor: "#fcfcfb",
     title: "Claude 导出数据阅读器",
     autoHideMenuBar: true,
     webPreferences: {

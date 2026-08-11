@@ -1,7 +1,15 @@
 :root {
-  font-family:
-    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "Noto Sans SC", sans-serif;
+  --font-ui:
+    "anthropic-sans", system-ui, "Segoe UI", Roboto, Helvetica, Arial,
+    "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-chat:
+    "anthropic-serif", Georgia, "Times New Roman", "Microsoft YaHei UI",
+    "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", serif;
+  --font-code:
+    "anthropic-mono", ui-monospace, "SFMono-Regular", "SF Mono", Menlo,
+    Consolas, "Microsoft YaHei UI", "Microsoft YaHei",
+    "Noto Sans Mono CJK SC", monospace;
+  font-family: var(--font-ui);
   color: #292723;
   background: #fcfcfb;
   font-synthesis: none;
@@ -11,17 +19,33 @@
   --panel-hover: #f4f4f1;
   --surface: #ffffff;
   --text: #292723;
-  --muted: #77736b;
+  --chat-text: #0b0b0b;
+  --muted: #6b6b6a;
   --faint: #a7a198;
   --line: rgba(46, 43, 37, 0.11);
   --line-strong: rgba(46, 43, 37, 0.18);
   --accent: #c8663d;
   --accent-soft: #f1ded4;
-  --human: #eeece5;
-  --code: #efeee9;
-  --code-block: #f5f4ef;
-  --code-block-header: #ebeae4;
-  --code-block-text: #34312c;
+  --human: #f0f0ef;
+  --code: #f3f3f2;
+  --code-border: #e4e4e3;
+  --code-block: #f3f3f2;
+  --code-block-header: #ededec;
+  --code-block-text: #151515;
+  --code-unlabeled: #fefdfd;
+  --code-unlabeled-border: #e5e4e4;
+  --code-unlabeled-text: #14181f;
+  --markdown-divider: #cccccb;
+  --table-header-line: color-mix(
+    in srgb,
+    var(--chat-text) 55%,
+    transparent
+  );
+  --table-row-line: color-mix(
+    in srgb,
+    var(--chat-text) 28%,
+    transparent
+  );
   --code-block-hover: #dfddd5;
   --code-copy-success: #567b58;
   --syntax-comment: #858079;
@@ -54,6 +78,7 @@
   --panel-hover: #302e29;
   --surface: #2a2925;
   --text: #e9e6df;
+  --chat-text: #f5f4f1;
   --muted: #aaa59b;
   --faint: #777269;
   --line: rgba(239, 233, 222, 0.11);
@@ -62,9 +87,14 @@
   --accent-soft: #50362b;
   --human: #35332d;
   --code: #1d1c19;
+  --code-border: #44413b;
   --code-block: #1d1c19;
   --code-block-header: #272621;
   --code-block-text: #e9e6df;
+  --code-unlabeled: #1d1c19;
+  --code-unlabeled-border: #44413b;
+  --code-unlabeled-text: #e9e6df;
+  --markdown-divider: #56534e;
   --code-block-hover: #393731;
   --code-copy-success: #8fc08e;
   --syntax-comment: #99938a;
@@ -969,14 +999,33 @@ html.is-resizing * {
   align-items: center;
   height: 58px;
   padding: 0 16px;
-  background: color-mix(in srgb, var(--page) 91%, transparent);
+  background: var(--page);
   border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  backdrop-filter: blur(12px);
 }
 
 .topbar-actions {
   display: flex;
   gap: 4px;
+}
+
+.topbar-title {
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 4px;
+  color: var(--chat-text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-title:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 3px;
 }
 
 .font-settings-anchor {
@@ -1187,6 +1236,7 @@ html.is-resizing * {
   height: 100%;
   min-height: 0;
   overflow-y: scroll;
+  background: var(--page);
   overscroll-behavior-y: contain;
   touch-action: pan-y;
   scroll-behavior: smooth;
@@ -1238,9 +1288,9 @@ html.is-resizing * {
 }
 
 .conversation {
-  width: min(100% - 48px, 790px);
+  width: min(100% - 56px, 708px);
   margin: 0 auto;
-  padding: 104px 0 100px;
+  padding: 76px 0 100px;
 }
 
 .memory-page {
@@ -1664,8 +1714,8 @@ html.is-resizing * {
 
 .message-human .message-content {
   max-width: 86%;
-  padding: 5px 19px;
-  border-radius: 18px;
+  padding: 14px 16px;
+  border-radius: 16px;
   background: var(--human);
 }
 
@@ -1729,12 +1779,51 @@ html.is-resizing * {
   font-size: calc(var(--chat-font-size) - 2px);
   line-height: 1.43;
 }
+
 .markdown {
-  color: var(--text);
-  font-family: Georgia, "Noto Serif SC", serif;
+  color: var(--chat-text);
+  font-family: var(--font-ui);
   font-size: var(--chat-font-size);
   font-variant-numeric: lining-nums proportional-nums;
-  line-height: 1.72;
+  line-height: 1.5;
+}
+
+.message-assistant .markdown {
+  font-family: var(--font-chat);
+  font-kerning: auto;
+  font-variation-settings: "opsz" 16;
+  letter-spacing: normal;
+}
+
+.message-assistant .markdown h1,
+.message-assistant .markdown h2,
+.message-assistant .markdown h3,
+.message-assistant .markdown h4 {
+  font-family: var(--font-chat);
+  font-variation-settings: "opsz" 20;
+}
+
+.markdown p {
+  margin: 0.82em 0;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0.85em 0 1.05em;
+  padding-left: 1.55em;
+}
+
+.markdown li {
+  margin: 0.28em 0;
+  padding-left: 0.4em;
+}
+
+.markdown ol > li::marker {
+  font-family: inherit;
+  font-size: 1em;
+  font-weight: 400;
+  font-variant-numeric: lining-nums proportional-nums;
+  font-feature-settings: "lnum" 1, "onum" 0;
 }
 
 .markdown > :first-child {
@@ -1749,26 +1838,26 @@ html.is-resizing * {
 .markdown h2,
 .markdown h3,
 .markdown h4 {
-  color: var(--text);
-  font-family: Georgia, "Noto Serif SC", serif;
-  font-weight: 600;
+  color: var(--chat-text);
+  font-family: var(--font-ui);
+  font-weight: 700;
   line-height: 1.28;
   scroll-margin-top: 82px;
 }
 
 .markdown h1 {
-  margin: 1.45em 0 0.55em;
-  font-size: 27px;
+  margin: 1.55em 0 0.62em;
+  font-size: 24px;
 }
 
 .markdown h2 {
-  margin: 1.35em 0 0.5em;
-  font-size: 22px;
+  margin: 24px 0 5px;
+  font-size: 18px;
 }
 
 .markdown h3 {
-  margin: 1.2em 0 0.45em;
-  font-size: 18px;
+  margin: 1.35em 0 0.55em;
+  font-size: 17px;
 }
 
 .markdown h4 {
@@ -1889,12 +1978,33 @@ html.is-resizing * {
   color: var(--muted);
 }
 
+.markdown hr {
+  height: 0;
+  margin: 1.5em 0 1em;
+  border: 0;
+  border-top: 0.5px solid var(--markdown-divider);
+  background: transparent;
+}
+
+.markdown hr + :not(.heading-anchor),
+.markdown hr + .heading-anchor + * {
+  margin-top: 0;
+}
+
 .markdown :not(pre) > code {
-  padding: 0.16em 0.35em;
-  border-radius: 5px;
+  padding: 0.09em 0.32em;
+  border: 1px solid var(--code-border);
+  border-radius: 6px;
+  color: #a3322d;
   background: var(--code);
-  font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 0.86em;
+  font-family: var(--font-code);
+  font-size: 0.88em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+:root[data-theme="dark"] .markdown :not(pre) > code {
+  color: #ef9a94;
 }
 
 .markdown pre {
@@ -1914,12 +2024,13 @@ html.is-resizing * {
 }
 
 .code-block {
+  position: relative;
   max-width: 100%;
   min-width: 0;
-  margin: 1.05em 0;
+  margin: 0.75em 0;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  border: 1px solid var(--code-border);
+  border-radius: 10px;
   background: var(--code-block);
   box-shadow: 0 1px 1px rgba(39, 34, 26, 0.025);
 }
@@ -1928,14 +2039,48 @@ html.is-resizing * {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 38px;
+  min-height: 36px;
   padding: 0 10px 0 14px;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
   background: var(--code-block-header);
-  font-family:
-    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "Noto Sans SC", sans-serif;
+  font-family: var(--font-ui);
+}
+
+.code-block.is-unlabeled {
+  border-color: var(--code-unlabeled-border);
+  border-radius: 8px;
+  background: var(--code-unlabeled);
+  box-shadow: none;
+}
+
+.code-block.is-unlabeled pre {
+  padding: 15px 15px 16px;
+  color: var(--code-unlabeled-text);
+  background: var(--code-unlabeled);
+}
+
+.code-block.is-unlabeled .code-copy-overlay {
+  position: absolute;
+  z-index: 1;
+  top: 7px;
+  right: 7px;
+  opacity: 0;
+  background: color-mix(in srgb, var(--code-unlabeled) 92%, transparent);
+  transition: opacity 120ms ease;
+}
+
+.code-block.is-unlabeled:hover .code-copy-overlay,
+.code-block.is-unlabeled:focus-within .code-copy-overlay {
+  opacity: 1;
+}
+
+.code-block.is-unlabeled .code-copy-label {
+  display: none;
+}
+
+.code-block.is-unlabeled .code-copy-icon::after {
+  background: var(--code-unlabeled);
 }
 
 .code-block-language {
@@ -2034,7 +2179,7 @@ html.is-resizing * {
   margin: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 16px 18px 17px;
+  padding: 15px 17px 16px;
   border: 0;
   border-radius: 0;
   color: var(--code-block-text);
@@ -2071,11 +2216,10 @@ html.is-resizing * {
   padding: 0;
   color: inherit;
   background: transparent;
-  font-family:
-    "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 0.84em;
+  font-family: var(--font-code);
+  font-size: 0.9375em;
   font-variant-ligatures: none;
-  line-height: 1.58;
+  line-height: 1.5;
   white-space: pre;
 }
 
@@ -2175,10 +2319,10 @@ html.is-resizing * {
 .table-scroll {
   width: 100%;
   max-width: 100%;
-  margin: 1.25em 0;
+  margin: 0.75em 0 2.25em;
   overflow-x: auto;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  border-top: 0;
+  border-bottom: 1px solid var(--table-row-line);
   scrollbar-color: var(--scroll-thumb) transparent;
   scrollbar-width: thin;
 }
@@ -2200,21 +2344,22 @@ html.is-resizing * {
   border: 0;
   border-collapse: collapse;
   font-size: 0.9em;
-  line-height: 1.55;
+  line-height: 1.65;
 }
 
 .markdown th,
 .markdown td {
-  padding: 11px 13px;
+  padding: 9px 0;
   border: 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--table-row-line);
   text-align: left;
   vertical-align: top;
 }
 
 .markdown th {
-  color: var(--text);
-  background: color-mix(in srgb, var(--panel) 48%, transparent);
+  border-bottom-color: var(--table-header-line);
+  color: inherit;
+  background: transparent;
   font-weight: 600;
 }
 
@@ -2233,11 +2378,11 @@ html.is-resizing * {
 }
 
 .markdown tbody tr {
-  transition: background 120ms ease;
+  background: transparent;
 }
 
 .markdown tbody tr:hover {
-  background: color-mix(in srgb, var(--panel-hover) 34%, transparent);
+  background: transparent;
 }
 
 .markdown td > :first-child,
