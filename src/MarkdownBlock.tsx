@@ -421,16 +421,29 @@ export default function MarkdownBlock({
     renderer.code = ({ text: codeText, lang }) => {
       const codeIndex = codeTexts.push(codeText) - 1;
       const highlighted = highlightCode(codeText, lang);
-
-      return `
-        <figure class="code-block">
+      const hasDeclaredLanguage = Boolean(lang?.trim());
+      const copyButton = `
+        <button class="code-copy-button ${
+          hasDeclaredLanguage ? "" : "code-copy-overlay"
+        }" type="button" data-code-copy data-code-index="${codeIndex}" aria-label="复制代码" title="复制代码">
+          <span class="code-copy-icon" aria-hidden="true"></span>
+          <span class="code-copy-label">复制</span>
+        </button>
+      `;
+      const header = hasDeclaredLanguage
+        ? `
           <header class="code-block-header">
             <span class="code-block-language">${highlighted.language}</span>
-            <button class="code-copy-button" type="button" data-code-copy data-code-index="${codeIndex}" aria-label="复制代码" title="复制代码">
-              <span class="code-copy-icon" aria-hidden="true"></span>
-              <span class="code-copy-label">复制</span>
-            </button>
+            ${copyButton}
           </header>
+        `
+        : copyButton;
+
+      return `
+        <figure class="code-block ${
+          hasDeclaredLanguage ? "is-labeled" : "is-unlabeled"
+        }">
+          ${header}
           <pre><code class="${highlighted.className}">${highlighted.html}</code></pre>
         </figure>
       `;

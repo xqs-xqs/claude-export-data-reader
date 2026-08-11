@@ -75,7 +75,11 @@ const LANGUAGE_LABELS: Record<string, string> = {
   xml: "XML",
   css: "CSS",
   yaml: "YAML",
-  latex: "LaTeX"
+  latex: "LaTeX",
+  text: "Text",
+  plain: "Text",
+  plaintext: "Text",
+  txt: "Text"
 };
 
 export interface HighlightedCode {
