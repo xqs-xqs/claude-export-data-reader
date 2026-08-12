@@ -30,14 +30,17 @@ A read-only desktop app for reviewing exported Claude conversations. Follows Cla
 
 - Desktop three-column layout with collapsible and resizable sidebars
 - Light and dark themes
-- Markdown rendering with Claude-inspired typography and spacing
+- Claude-inspired reading background, typography, content width, spacing, and message layout
+- The current conversation title is shown in the top bar; long user prompts collapse automatically and can be expanded with `Show more / Show less`
+- Markdown rendering for headings, lists, dividers, links, blockquotes, and tables
 - Inline and display LaTeX formulas rendered with KaTeX
-- Syntax-highlighted code blocks with language labels and copy buttons
-- Low-border tables, blockquotes, lists, and links, with citations restored inline and shown in local URL popovers
+- Claude-style code blocks with syntax highlighting and copy controls; declared languages receive a header while unlabeled blocks keep a clean presentation
+- Low-border tables and balanced dividers, with citations restored inline and shown in local URL popovers
 - Thinking and tool activity grouped and collapsed by default
 - Strict handling of `hidden` and `hidden_in_chat` content
 - Current conversation-branch rendering
-- Separate account and project Memory views with outlines built from the original exported headings
+- Compatibility with legacy account Memory, project Memory, and the newer structured `memory_files` export format
+- Structured Memory grouped into You, Topics, Areas, and People, with list, detail, and outline views that hide raw YAML metadata
 - File cards for uploaded and Claude-generated file references
 
 ### 🔍 Reading enhancements
@@ -50,7 +53,7 @@ A read-only desktop app for reviewing exported Claude conversations. Follows Cla
 - Scroll tracking and one-click navigation between conversation sections
 - Independently resizable sidebars for different screens and reading preferences
 - Repeated ZIP imports with SHA-256 duplicate detection
-- Multi-account import safety at the storage layer: conversation and project records are keyed by account ID so different exports do not overwrite each other; account filtering and separate per-account libraries are not yet available
+- Account switching with strict data isolation: conversations, search results, Pinned items, and Memory are limited to the currently selected account
 
 ## ⚠️ Important limitation: exported files
 
@@ -104,9 +107,10 @@ This repository currently provides a source-based local build. A packaged Window
 
 1. Start the application.
 2. Click **Import data** and select a Claude Export ZIP.
-3. Choose a conversation from the left sidebar.
-4. Use `Ctrl+F` to search the current conversation, or `Ctrl+Shift+F` to search the entire local library.
-5. Adjust the theme, font sizes, sidebars, and conversation outline as needed.
+3. When multiple accounts have been imported, switch accounts from the menu in the lower-left corner.
+4. Choose a conversation from the left sidebar, or open Memory to browse exported account and project memories.
+5. Use `Ctrl+F` to search the current conversation, or `Ctrl+Shift+F` to search the current account's local library.
+6. Adjust the theme, font sizes, sidebars, and conversation outline as needed.
 
 ## 📄 License
 
