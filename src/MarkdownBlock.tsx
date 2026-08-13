@@ -421,19 +421,40 @@ export default function MarkdownBlock({
     renderer.code = ({ text: codeText, lang }) => {
       const codeIndex = codeTexts.push(codeText) - 1;
       const highlighted = highlightCode(codeText, lang);
-      const hasDeclaredLanguage = Boolean(lang?.trim());
+      const declaredLanguage = lang
+        ?.trim()
+        .split(/\s+/, 1)[0]
+        ?.replace(/^\{\./, "")
+        .replace(/\}$/, "")
+        .toLowerCase();
+      const isPlainCode = ["text", "plain", "plaintext", "txt"].includes(
+        declaredLanguage ?? ""
+      );
+      const codeKind = !declaredLanguage
+        ? "unlabeled"
+        : isPlainCode
+          ? "plain"
+          : "language";
       const copyButton = `
         <button class="code-copy-button ${
-          hasDeclaredLanguage ? "" : "code-copy-overlay"
+          codeKind === "unlabeled"
+            ? "code-copy-overlay"
+            : codeKind === "language"
+              ? "code-copy-icon-only"
+              : ""
         }" type="button" data-code-copy data-code-index="${codeIndex}" aria-label="复制代码" title="复制代码">
           <span class="code-copy-icon" aria-hidden="true"></span>
           <span class="code-copy-label">复制</span>
         </button>
       `;
-      const header = hasDeclaredLanguage
+      const header = codeKind !== "unlabeled"
         ? `
           <header class="code-block-header">
-            <span class="code-block-language">${highlighted.language}</span>
+            <span class="code-block-language">${
+              codeKind === "language"
+                ? highlighted.language.toLowerCase()
+                : highlighted.language
+            }</span>
             ${copyButton}
           </header>
         `
@@ -441,7 +462,11 @@ export default function MarkdownBlock({
 
       return `
         <figure class="code-block ${
-          hasDeclaredLanguage ? "is-labeled" : "is-unlabeled"
+          codeKind === "unlabeled"
+            ? "is-unlabeled"
+            : codeKind === "plain"
+              ? "is-labeled is-plain"
+              : "is-labeled is-language"
         }">
           ${header}
           <pre><code class="${highlighted.className}">${highlighted.html}</code></pre>

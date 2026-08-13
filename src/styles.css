@@ -2094,6 +2094,54 @@ html.is-resizing * {
   background: var(--code-unlabeled);
 }
 
+.code-block.is-language {
+  border-color: var(--code-unlabeled-border);
+  border-radius: 8px;
+  background: var(--code-unlabeled);
+  box-shadow: none;
+}
+
+.code-block.is-language .code-block-header {
+  min-height: 38px;
+  border-bottom: 0;
+  background: var(--code-unlabeled);
+}
+
+.code-block.is-language pre {
+  padding: 10px 12px 12px;
+  color: var(--code-unlabeled-text);
+  background: var(--code-unlabeled);
+}
+
+.code-block.is-language .code-copy-icon-only {
+  gap: 0;
+  padding: 4px;
+  opacity: 0;
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    opacity 120ms ease;
+}
+
+.code-block.is-language:hover .code-copy-icon-only,
+.code-block.is-language:focus-within .code-copy-icon-only {
+  opacity: 1;
+}
+
+.code-block.is-language .code-copy-label {
+  display: none;
+}
+
+.code-block.is-language .code-copy-icon::after {
+  background: var(--code-unlabeled);
+}
+
+@media (hover: none) {
+  .code-block.is-language .code-copy-icon-only {
+    opacity: 1;
+  }
+}
+
 .code-block-language {
   min-width: 0;
   overflow: hidden;
