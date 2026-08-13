@@ -1,6 +1,7 @@
 import {
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -58,6 +59,22 @@ type Theme = "light" | "dark";
 type PanelSide = "sidebar" | "outline";
 type PrimaryView = "conversation" | "memory";
 
+interface ReaderSessionState {
+  version: 1;
+  selectedAccountUuid?: string;
+  selectedConversationKey?: string;
+  primaryView?: PrimaryView;
+  memoryScope?: MemoryScope;
+  selectedMemoryFilePath?: string;
+  selectedProjectMemoryUuid?: string;
+  sidebarOpen?: boolean;
+  outlineOpen?: boolean;
+  activeHeadings?: Record<string, string>;
+  mainScrollPositions?: Record<string, number>;
+  sidebarScrollPositions?: Record<string, number>;
+  outlineScrollPositions?: Record<string, number>;
+}
+
 interface FontSettings {
   chat: number;
   sidebar: number;
@@ -100,6 +117,72 @@ const PANEL_LIMITS = {
 } as const;
 
 const RESIZER_WIDTH = 7;
+const SESSION_STORAGE_KEY = "reader-last-session-v1";
+
+function persistedText(value: unknown) {
+  return typeof value === "string" && value ? value : undefined;
+}
+
+function persistedScrollPositions(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([key, position]) =>
+          Boolean(key) &&
+          typeof position === "number" &&
+          Number.isFinite(position) &&
+          position >= 0
+      )
+      .slice(-500)
+  );
+}
+
+function persistedTextMap(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([key, text]) => Boolean(key) && typeof text === "string" && Boolean(text)
+      )
+      .slice(-500)
+  );
+}
+
+function readLastSession(): ReaderSessionState {
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(SESSION_STORAGE_KEY) || "null"
+    ) as Record<string, unknown> | null;
+    if (!parsed || parsed.version !== 1) return { version: 1 };
+    return {
+      version: 1,
+      selectedAccountUuid: persistedText(parsed.selectedAccountUuid),
+      selectedConversationKey: persistedText(parsed.selectedConversationKey),
+      primaryView:
+        parsed.primaryView === "memory" ? "memory" : "conversation",
+      memoryScope: parsed.memoryScope === "project" ? "project" : "account",
+      selectedMemoryFilePath: persistedText(parsed.selectedMemoryFilePath),
+      selectedProjectMemoryUuid: persistedText(
+        parsed.selectedProjectMemoryUuid
+      ),
+      sidebarOpen:
+        typeof parsed.sidebarOpen === "boolean" ? parsed.sidebarOpen : undefined,
+      outlineOpen:
+        typeof parsed.outlineOpen === "boolean" ? parsed.outlineOpen : undefined,
+      activeHeadings: persistedTextMap(parsed.activeHeadings),
+      mainScrollPositions: persistedScrollPositions(parsed.mainScrollPositions),
+      sidebarScrollPositions: persistedScrollPositions(
+        parsed.sidebarScrollPositions
+      ),
+      outlineScrollPositions: persistedScrollPositions(
+        parsed.outlineScrollPositions
+      )
+    };
+  } catch {
+    return { version: 1 };
+  }
+}
 
 function clamp(value: unknown, minimum: number, maximum: number, fallback: number) {
   const numeric = Number(value);
@@ -974,22 +1057,53 @@ function PanelResizer({
 }
 
 export default function App() {
+  const initialSession = useMemo(readLastSession, []);
   const [library, setLibrary] = useState<Library>(EMPTY_LIBRARY);
+  const [libraryReady, setLibraryReady] = useState(false);
+  const [sessionHydrated, setSessionHydrated] = useState(false);
   const [selectedAccountUuid, setSelectedAccountUuid] = useState<string | undefined>(
-    () => localStorage.getItem("selected-account-uuid") || undefined
+    () =>
+      initialSession.selectedAccountUuid ||
+      localStorage.getItem("selected-account-uuid") ||
+      undefined
   );
-  const [selectedKey, setSelectedKey] = useState<string>();
+  const [selectedKey, setSelectedKey] = useState<string | undefined>(
+    initialSession.selectedConversationKey
+  );
   const [primaryView, setPrimaryView] =
-    useState<PrimaryView>("conversation");
-  const [memoryScope, setMemoryScope] = useState<MemoryScope>("account");
-  const [selectedMemoryFilePath, setSelectedMemoryFilePath] =
-    useState<string>();
-  const [selectedProjectMemoryUuid, setSelectedProjectMemoryUuid] =
-    useState<string>();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [outlineOpen, setOutlineOpen] = useState(
-    () => localStorage.getItem("outline-open") !== "false"
+    useState<PrimaryView>(initialSession.primaryView || "conversation");
+  const [memoryScope, setMemoryScope] = useState<MemoryScope>(
+    initialSession.memoryScope || "account"
   );
+  const [selectedMemoryFilePath, setSelectedMemoryFilePath] =
+    useState<string | undefined>(initialSession.selectedMemoryFilePath);
+  const [selectedProjectMemoryUuid, setSelectedProjectMemoryUuid] =
+    useState<string | undefined>(initialSession.selectedProjectMemoryUuid);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    initialSession.sidebarOpen !== false
+  );
+  const [outlineOpen, setOutlineOpen] = useState(
+    () =>
+      initialSession.outlineOpen ??
+      localStorage.getItem("outline-open") !== "false"
+  );
+  const mainScrollPositionsRef = useRef<Record<string, number>>({
+    ...(initialSession.mainScrollPositions || {})
+  });
+  const sidebarScrollPositionsRef = useRef<Record<string, number>>({
+    ...(initialSession.sidebarScrollPositions || {})
+  });
+  const outlineScrollPositionsRef = useRef<Record<string, number>>({
+    ...(initialSession.outlineScrollPositions || {})
+  });
+  const activeHeadingsRef = useRef<Record<string, string>>({
+    ...(initialSession.activeHeadings || {})
+  });
+  const sessionPersistTimerRef = useRef<number | undefined>(undefined);
+  const suppressMainRestoreKeyRef = useRef<string | undefined>(undefined);
+  const suppressHeadingRestoreKeyRef = useRef<string | undefined>(undefined);
+  const suppressOutlineRestoreKeyRef = useRef<string | undefined>(undefined);
+  const restoredOutlineContextRef = useRef<string | undefined>(undefined);
   const [panelWidths, setPanelWidths] = useState<PanelWidths>(
     initialPanelWidths
   );
@@ -1207,7 +1321,12 @@ export default function App() {
   }, [fontSettings]);
 
   useEffect(() => {
-    if (!library.accounts.length) return;
+    if (!libraryReady) return;
+    if (!library.accounts.length) {
+      setSelectedAccountUuid(undefined);
+      localStorage.removeItem("selected-account-uuid");
+      return;
+    }
 
     setSelectedAccountUuid((current) => {
       const next = library.accounts.some((account) => account.uuid === current)
@@ -1216,9 +1335,10 @@ export default function App() {
       if (next) localStorage.setItem("selected-account-uuid", next);
       return next;
     });
-  }, [library.accounts]);
+  }, [library.accounts, libraryReady]);
 
   useEffect(() => {
+    if (!libraryReady) return;
     if (!activeAccountUuid) {
       setSelectedKey(undefined);
       return;
@@ -1232,9 +1352,10 @@ export default function App() {
       const first = accountConversations[0];
       return first ? conversationKey(first) : undefined;
     });
-  }, [accountConversations, activeAccountUuid]);
+  }, [accountConversations, activeAccountUuid, libraryReady]);
 
   useEffect(() => {
+    if (!libraryReady) return;
     if (
       primaryView === "conversation" &&
       !accountConversations.length &&
@@ -1242,9 +1363,10 @@ export default function App() {
     ) {
       setPrimaryView("memory");
     }
-  }, [accountConversations.length, activeMemory, primaryView]);
+  }, [accountConversations.length, activeMemory, libraryReady, primaryView]);
 
   useEffect(() => {
+    if (!libraryReady) return;
     const projectUuids = memoryProjectOptions.map((project) => project.uuid);
     setSelectedProjectMemoryUuid((current) =>
       current && projectUuids.includes(current)
@@ -1255,15 +1377,69 @@ export default function App() {
       if (current === "project" && !projectUuids.length) return "account";
       return current;
     });
-  }, [activeMemory, memoryProjectOptions]);
+  }, [activeMemory, libraryReady, memoryProjectOptions]);
+
+  useEffect(() => {
+    if (!libraryReady) return;
+    setSelectedMemoryFilePath((current) =>
+      current && structuredMemory.entries.some((entry) => entry.path === current)
+        ? current
+        : undefined
+    );
+  }, [libraryReady, structuredMemory.entries]);
+
+  useEffect(() => {
+    if (!libraryReady) return;
+    if (primaryView === "memory" && !activeMemory) {
+      setPrimaryView("conversation");
+    }
+  }, [activeMemory, libraryReady, primaryView]);
+
+  const sessionSelectionsValid =
+    libraryReady &&
+    (library.accounts.length
+      ? Boolean(
+          selectedAccountUuid &&
+            library.accounts.some(
+              (account) => account.uuid === selectedAccountUuid
+            )
+        )
+      : selectedAccountUuid === undefined) &&
+    (accountConversations.length
+      ? accountConversations.some(
+          (conversation) => conversationKey(conversation) === selectedKey
+        )
+      : selectedKey === undefined) &&
+    (memoryProjectOptions.length
+      ? Boolean(
+          selectedProjectMemoryUuid &&
+            memoryProjectOptions.some(
+              (project) => project.uuid === selectedProjectMemoryUuid
+            )
+        )
+      : selectedProjectMemoryUuid === undefined) &&
+    (memoryScope !== "project" || Boolean(memoryProjectOptions.length)) &&
+    (!selectedMemoryFilePath ||
+      structuredMemory.entries.some(
+        (entry) => entry.path === selectedMemoryFilePath
+      )) &&
+    (primaryView !== "memory" || Boolean(activeMemory));
+
+  useEffect(() => {
+    if (!sessionHydrated && sessionSelectionsValid) setSessionHydrated(true);
+  }, [sessionHydrated, sessionSelectionsValid]);
 
   useEffect(() => {
     if (window.readerAPI) {
-      window.readerAPI.getLibrary().then((nextLibrary) => {
-        setLibrary(nextLibrary);
-      });
+      window.readerAPI
+        .getLibrary()
+        .then((nextLibrary) => setLibrary(nextLibrary))
+        .finally(() => setLibraryReady(true));
     } else if (new URLSearchParams(window.location.search).has("demo")) {
       setLibrary(DEMO_LIBRARY);
+      setLibraryReady(true);
+    } else {
+      setLibraryReady(true);
     }
   }, []);
 
@@ -1364,8 +1540,246 @@ export default function App() {
         ? []
         : memoryDocument.headings
       : conversationHeadings;
+  const mainViewContextKey =
+    primaryView === "conversation"
+      ? selectedKey
+        ? `conversation:${selectedKey}`
+        : undefined
+      : activeAccountUuid
+        ? `memory:${activeAccountUuid}:${memoryScope}:${
+            activeProjectMemoryUuid || "account"
+          }:${selectedMemoryFilePath || "index"}`
+        : undefined;
+  const sidebarViewContextKey = activeAccountUuid
+    ? `account:${activeAccountUuid}`
+    : undefined;
+
+  const sessionSnapshotRef = useRef<ReaderSessionState>(initialSession);
+
+  function persistSessionSnapshot() {
+    try {
+      localStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify(sessionSnapshotRef.current)
+      );
+    } catch {
+      // Reading remains available even if the local profile cannot be written.
+    }
+  }
+
+  function scheduleSessionPersist() {
+    window.clearTimeout(sessionPersistTimerRef.current);
+    sessionPersistTimerRef.current = window.setTimeout(
+      persistSessionSnapshot,
+      250
+    );
+  }
 
   useEffect(() => {
+    if (!sessionHydrated) return;
+    sessionSnapshotRef.current = {
+      version: 1,
+      selectedAccountUuid: activeAccountUuid,
+      selectedConversationKey: selectedKey,
+      primaryView,
+      memoryScope,
+      selectedMemoryFilePath,
+      selectedProjectMemoryUuid: activeProjectMemoryUuid,
+      sidebarOpen,
+      outlineOpen,
+      activeHeadings: activeHeadingsRef.current,
+      mainScrollPositions: mainScrollPositionsRef.current,
+      sidebarScrollPositions: sidebarScrollPositionsRef.current,
+      outlineScrollPositions: outlineScrollPositionsRef.current
+    };
+    persistSessionSnapshot();
+  }, [
+    activeAccountUuid,
+    activeProjectMemoryUuid,
+    memoryScope,
+    outlineOpen,
+    primaryView,
+    sessionHydrated,
+    selectedKey,
+    selectedMemoryFilePath,
+    sidebarOpen
+  ]);
+
+  useEffect(() => {
+    if (!sessionHydrated) return;
+    const flushSession = () => {
+      if (mainViewContextKey) {
+        const scroller =
+          document.querySelector<HTMLElement>(".conversation-scroll");
+        if (scroller) {
+          mainScrollPositionsRef.current[mainViewContextKey] = scroller.scrollTop;
+        }
+      }
+      if (sidebarViewContextKey) {
+        const scroller =
+          document.querySelector<HTMLElement>(".conversation-lists");
+        if (scroller) {
+          sidebarScrollPositionsRef.current[sidebarViewContextKey] =
+            scroller.scrollTop;
+        }
+      }
+      if (outlineOpen && mainViewContextKey) {
+        const scroller =
+          document.querySelector<HTMLElement>("#conversation-outline");
+        if (scroller) {
+          outlineScrollPositionsRef.current[mainViewContextKey] =
+            scroller.scrollTop;
+        }
+      }
+      window.clearTimeout(sessionPersistTimerRef.current);
+      persistSessionSnapshot();
+    };
+    window.addEventListener("pagehide", flushSession);
+    window.addEventListener("beforeunload", flushSession);
+    return () => {
+      window.removeEventListener("pagehide", flushSession);
+      window.removeEventListener("beforeunload", flushSession);
+    };
+  }, [
+    mainViewContextKey,
+    outlineOpen,
+    sessionHydrated,
+    sidebarViewContextKey
+  ]);
+
+  useEffect(
+    () => () => window.clearTimeout(sessionPersistTimerRef.current),
+    []
+  );
+
+  useLayoutEffect(() => {
+    if (!sessionHydrated || !mainViewContextKey) {
+      setActiveHeading(undefined);
+      return;
+    }
+    if (suppressHeadingRestoreKeyRef.current === mainViewContextKey) {
+      suppressHeadingRestoreKeyRef.current = undefined;
+      delete activeHeadingsRef.current[mainViewContextKey];
+      setActiveHeading(undefined);
+      restoredOutlineContextRef.current = mainViewContextKey;
+      return;
+    }
+    const restored = activeHeadingsRef.current[mainViewContextKey];
+    setActiveHeading(
+      restored && navigationHeadings.some((heading) => heading.id === restored)
+        ? restored
+        : undefined
+    );
+    restoredOutlineContextRef.current = undefined;
+  }, [mainViewContextKey, navigationHeadings, sessionHydrated]);
+
+  useLayoutEffect(() => {
+    if (!sessionHydrated || !mainViewContextKey) return;
+    const scroller = document.querySelector<HTMLElement>(".conversation-scroll");
+    if (!scroller) return;
+    const suppressRestore =
+      suppressMainRestoreKeyRef.current === mainViewContextKey;
+    if (suppressRestore) suppressMainRestoreKeyRef.current = undefined;
+    const saved = suppressRestore
+      ? scroller.scrollTop
+      : mainScrollPositionsRef.current[mainViewContextKey] || 0;
+    if (!suppressRestore) scroller.scrollTop = saved;
+    const frame = window.requestAnimationFrame(() => {
+      if (!suppressRestore) {
+        scroller.scrollTop = Math.min(
+          saved,
+          Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+        );
+      }
+    });
+    const track = () => {
+      mainScrollPositionsRef.current[mainViewContextKey] = scroller.scrollTop;
+      scheduleSessionPersist();
+    };
+    scroller.addEventListener("scroll", track, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", track);
+    };
+  }, [mainViewContextKey, sessionHydrated]);
+
+  useLayoutEffect(() => {
+    if (!sessionHydrated || !sidebarOpen || !sidebarViewContextKey) return;
+    const scroller = document.querySelector<HTMLElement>(".conversation-lists");
+    if (!scroller) return;
+    const saved = sidebarScrollPositionsRef.current[sidebarViewContextKey] || 0;
+    scroller.scrollTop = saved;
+    const frame = window.requestAnimationFrame(() => {
+      scroller.scrollTop = Math.min(
+        saved,
+        Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+      );
+    });
+    const track = () => {
+      sidebarScrollPositionsRef.current[sidebarViewContextKey] = scroller.scrollTop;
+      scheduleSessionPersist();
+    };
+    scroller.addEventListener("scroll", track, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", track);
+    };
+  }, [sessionHydrated, sidebarOpen, sidebarViewContextKey]);
+
+  useLayoutEffect(() => {
+    if (!outlineOpen) {
+      restoredOutlineContextRef.current = undefined;
+      return;
+    }
+    if (!sessionHydrated || !mainViewContextKey) return;
+    const restoredHeading = activeHeadingsRef.current[mainViewContextKey];
+    if (
+      restoredHeading &&
+      navigationHeadings.some((heading) => heading.id === restoredHeading) &&
+      activeHeading !== restoredHeading
+    ) {
+      return;
+    }
+    const scroller = document.querySelector<HTMLElement>("#conversation-outline");
+    if (!scroller) return;
+    const shouldRestore =
+      restoredOutlineContextRef.current !== mainViewContextKey &&
+      suppressOutlineRestoreKeyRef.current !== mainViewContextKey;
+    if (suppressOutlineRestoreKeyRef.current === mainViewContextKey) {
+      suppressOutlineRestoreKeyRef.current = undefined;
+      restoredOutlineContextRef.current = mainViewContextKey;
+    }
+    let frame: number | undefined;
+    if (shouldRestore) {
+      restoredOutlineContextRef.current = mainViewContextKey;
+      const saved = outlineScrollPositionsRef.current[mainViewContextKey] || 0;
+      scroller.scrollTop = saved;
+      frame = window.requestAnimationFrame(() => {
+        scroller.scrollTop = Math.min(
+          saved,
+          Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+        );
+      });
+    }
+    const track = () => {
+      outlineScrollPositionsRef.current[mainViewContextKey] = scroller.scrollTop;
+      scheduleSessionPersist();
+    };
+    scroller.addEventListener("scroll", track, { passive: true });
+    return () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", track);
+    };
+  }, [
+    activeHeading,
+    mainViewContextKey,
+    navigationHeadings,
+    outlineOpen,
+    sessionHydrated
+  ]);
+
+  useEffect(() => {
+    if (!sessionHydrated) return;
     if (!navigationHeadings.length) {
       setActiveHeading(undefined);
       return;
@@ -1377,7 +1791,14 @@ export default function App() {
         const visible = entries
           .filter((entry) => entry.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]) setActiveHeading(visible[0].target.id);
+        if (visible[0]) {
+          const id = visible[0].target.id;
+          setActiveHeading(id);
+          if (mainViewContextKey) {
+            activeHeadingsRef.current[mainViewContextKey] = id;
+            scheduleSessionPersist();
+          }
+        }
       },
       {
         root: scrollRoot,
@@ -1389,7 +1810,13 @@ export default function App() {
       if (element) observer.observe(element);
     });
     return () => observer.disconnect();
-  }, [navigationHeadings, primaryView, selectedKey]);
+  }, [
+    mainViewContextKey,
+    navigationHeadings,
+    primaryView,
+    selectedKey,
+    sessionHydrated
+  ]);
 
   useEffect(() => {
     if (
@@ -1410,6 +1837,23 @@ export default function App() {
 
       const target =
         message.querySelector<HTMLElement>(".search-highlight") || message;
+      const nearestHeading = [...navigationHeadings].reverse().find((heading) => {
+        const element = document.getElementById(heading.id);
+        return (
+          element &&
+          scroller.contains(element) &&
+          (element === target ||
+            Boolean(
+              element.compareDocumentPosition(target) &
+                Node.DOCUMENT_POSITION_FOLLOWING
+            ))
+        );
+      });
+      if (nearestHeading && mainViewContextKey) {
+        setActiveHeading(nearestHeading.id);
+        activeHeadingsRef.current[mainViewContextKey] = nearestHeading.id;
+        scheduleSessionPersist();
+      }
       message.tabIndex = -1;
       message.focus({ preventScroll: true });
       const targetTop =
@@ -1426,7 +1870,14 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [messages, primaryView, searchTarget, selectedKey]);
+  }, [
+    mainViewContextKey,
+    messages,
+    navigationHeadings,
+    primaryView,
+    searchTarget,
+    selectedKey
+  ]);
 
   useEffect(() => {
     const scroller =
@@ -1539,43 +1990,36 @@ export default function App() {
         const newlyImportedAccount = result.library.accounts.find(
           (account) => !existingAccountUuids.has(account.uuid)
         );
-        const nextAccount =
-          newlyImportedAccount ||
-          result.library.accounts.find(
-            (account) => account.uuid === activeAccountUuid
-          ) ||
-          result.library.accounts[0];
-        const nextConversations = nextAccount
-          ? result.library.conversations.filter(
-              (conversation) => conversation.account_uuid === nextAccount.uuid
-            )
-          : [];
-        const nextMemory = nextAccount
-          ? result.library.memories.some(
-              (memory) => memory.account_uuid === nextAccount.uuid
-            )
-          : false;
-
         setLibrary(result.library);
-        setSelectedAccountUuid(nextAccount?.uuid);
-        if (nextAccount?.uuid) {
-          localStorage.setItem("selected-account-uuid", nextAccount.uuid);
-        }
-        setGlobalSearchQuery("");
-        setGlobalSearchOpen(false);
-        setSearchTarget(undefined);
-        setConversationFindOpen(false);
-        setConversationFindQuery("");
-        setSelectedMemoryFilePath(undefined);
-        setSelectedKey(
-          nextConversations[0]
-            ? conversationKey(nextConversations[0])
-            : undefined
-        );
-        if (!nextConversations.length && nextMemory) {
-          setPrimaryView("memory");
-        } else if (nextConversations.length) {
-          setPrimaryView("conversation");
+        if (newlyImportedAccount) {
+          const nextConversations = result.library.conversations.filter(
+            (conversation) =>
+              conversation.account_uuid === newlyImportedAccount.uuid
+          );
+          const nextMemory = result.library.memories.some(
+            (memory) => memory.account_uuid === newlyImportedAccount.uuid
+          );
+          setSelectedAccountUuid(newlyImportedAccount.uuid);
+          localStorage.setItem(
+            "selected-account-uuid",
+            newlyImportedAccount.uuid
+          );
+          setGlobalSearchQuery("");
+          setGlobalSearchOpen(false);
+          setSearchTarget(undefined);
+          setConversationFindOpen(false);
+          setConversationFindQuery("");
+          setSelectedMemoryFilePath(undefined);
+          setSelectedKey(
+            nextConversations[0]
+              ? conversationKey(nextConversations[0])
+              : undefined
+          );
+          if (!nextConversations.length && nextMemory) {
+            setPrimaryView("memory");
+          } else if (nextConversations.length) {
+            setPrimaryView("conversation");
+          }
         }
       }
       setNotice(
@@ -1603,9 +2047,6 @@ export default function App() {
     setSearchTarget(undefined);
     setConversationFindOpen(false);
     setConversationFindQuery("");
-    window.requestAnimationFrame(() => {
-      document.querySelector(".conversation-scroll")?.scrollTo({ top: 0 });
-    });
   }
 
   function selectAccount(accountUuid: string) {
@@ -1646,7 +2087,6 @@ export default function App() {
     }
 
     setFontMenuOpen(false);
-    scrollMainToTop();
   }
 
   async function toggleConversationPinned(conversation: Conversation) {
@@ -1691,12 +2131,6 @@ export default function App() {
     }
   }
 
-  function scrollMainToTop() {
-    window.requestAnimationFrame(() => {
-      document.querySelector(".conversation-scroll")?.scrollTo({ top: 0 });
-    });
-  }
-
   function openMemory() {
     setPrimaryView("memory");
     setSelectedMemoryFilePath(undefined);
@@ -1707,24 +2141,20 @@ export default function App() {
       setMemoryScope("project");
     }
     setFontMenuOpen(false);
-    scrollMainToTop();
   }
 
   function selectMemoryScope(scope: MemoryScope) {
     setMemoryScope(scope);
     setSelectedMemoryFilePath(undefined);
-    scrollMainToTop();
   }
 
   function selectProjectMemory(projectUuid: string) {
     setSelectedProjectMemoryUuid(projectUuid);
     setSelectedMemoryFilePath(undefined);
-    scrollMainToTop();
   }
 
   function selectMemoryFile(path: string | undefined) {
     setSelectedMemoryFilePath(path);
-    scrollMainToTop();
   }
 
   function openGlobalSearch() {
@@ -1769,6 +2199,12 @@ export default function App() {
     query: string
   ) {
     const nextConversationKey = conversationKey(conversation);
+    const nextContextKey = `conversation:${nextConversationKey}`;
+    if (primaryView !== "conversation" || nextConversationKey !== selectedKey) {
+      suppressMainRestoreKeyRef.current = nextContextKey;
+      suppressHeadingRestoreKeyRef.current = nextContextKey;
+      suppressOutlineRestoreKeyRef.current = nextContextKey;
+    }
     searchSequence.current += 1;
     setConversationFindOpen(false);
     setConversationFindQuery("");
@@ -1914,12 +2350,20 @@ export default function App() {
       behavior: "smooth"
     });
     setActiveHeading(id);
+    if (mainViewContextKey) {
+      activeHeadingsRef.current[mainViewContextKey] = id;
+      scheduleSessionPersist();
+    }
   }
 
   const appStyle = {
     "--sidebar-width": `${effectivePanelWidths.sidebar}px`,
     "--outline-width": `${effectivePanelWidths.outline}px`
   } as CSSProperties;
+
+  if (!sessionHydrated) {
+    return <div className="app-loading" role="status" aria-label="正在恢复上次阅读状态" />;
+  }
 
   return (
     <div

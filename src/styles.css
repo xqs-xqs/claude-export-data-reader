@@ -140,6 +140,12 @@ button {
   color: inherit;
 }
 
+.app-loading {
+  position: fixed;
+  inset: 0;
+  background: var(--page);
+}
+
 .app-shell {
   position: fixed;
   inset: 0;
