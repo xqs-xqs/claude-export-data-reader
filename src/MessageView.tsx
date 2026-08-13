@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from "react";
 import type { ContentBlock, Message } from "./types";
 import MarkdownBlock from "./MarkdownBlock";
 import { ChevronIcon, FileIcon } from "./icons";
@@ -7,11 +14,97 @@ import {
   fileTypeLabel,
   type MessageFilePreview
 } from "./messageFiles";
+import { findSearchMatchRanges } from "./search";
 
 function JsonPreview({ value }: { value: unknown }) {
   if (value === undefined || value === null) return null;
   const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
   return <pre className="structured-preview">{text}</pre>;
+}
+
+function PlainTextBlock({
+  text,
+  matchPrefix,
+  searchQuery
+}: {
+  text: string;
+  matchPrefix: string;
+  searchQuery?: string;
+}) {
+  const matches = useMemo(
+    () => findSearchMatchRanges(text, searchQuery || ""),
+    [searchQuery, text]
+  );
+  const urls = useMemo(() => {
+    const ranges: Array<{ end: number; start: number; url: string }> = [];
+    const pattern = /https?:\/\/[^\s<>{}\[\]"']+/giu;
+    for (const result of text.matchAll(pattern)) {
+      if (result.index === undefined) continue;
+      const url = result[0].replace(/[),.;!?，。；！？、]+$/u, "");
+      if (!url) continue;
+      ranges.push({
+        start: result.index,
+        end: result.index + url.length,
+        url
+      });
+    }
+    return ranges;
+  }, [text]);
+
+  const renderRange = (start: number, end: number, prefix: string) => {
+    const content: ReactNode[] = [];
+    let cursor = start;
+    matches.forEach((match, index) => {
+      const overlapStart = Math.max(start, match.start);
+      const overlapEnd = Math.min(end, match.end);
+      if (overlapStart >= overlapEnd) return;
+      if (overlapStart > cursor) {
+        content.push(text.slice(cursor, overlapStart));
+      }
+      const matchId = `${matchPrefix}-${index}`;
+      content.push(
+        <mark
+          className="search-highlight"
+          data-search-match="true"
+          data-search-match-head={overlapStart === match.start ? "true" : undefined}
+          data-search-match-id={matchId}
+          key={`${prefix}-match-${index}-${overlapStart}`}
+        >
+          {text.slice(overlapStart, overlapEnd)}
+        </mark>
+      );
+      cursor = overlapEnd;
+    });
+    if (cursor < end) content.push(text.slice(cursor, end));
+    return content;
+  };
+
+  const content: ReactNode[] = [];
+  let cursor = 0;
+  urls.forEach((range, index) => {
+    if (range.start > cursor) {
+      content.push(
+        ...renderRange(cursor, range.start, `plain-${index}-before`)
+      );
+    }
+    content.push(
+      <a
+        className="human-plain-link"
+        href={range.url}
+        key={`plain-url-${range.start}`}
+        rel="noreferrer"
+        target="_blank"
+      >
+        {renderRange(range.start, range.end, `plain-${index}-url`)}
+      </a>
+    );
+    cursor = range.end;
+  });
+  if (cursor < text.length) {
+    content.push(...renderRange(cursor, text.length, "plain-after"));
+  }
+
+  return <div className="human-plain-text">{content}</div>;
 }
 
 function ThinkingBlock({
@@ -275,23 +368,33 @@ function Content({
   message,
   block,
   blockIndex,
+  plainText = false,
   searchQuery
 }: {
   message: Message;
   block: ContentBlock;
   blockIndex: number;
+  plainText?: boolean;
   searchQuery?: string;
 }) {
   if (block.hidden || block.hidden_in_chat) return null;
   if (block.type === "text" && block.text) {
     return (
       <div className="text-block">
-        <MarkdownBlock
-          text={block.text}
-          anchorPrefix={`heading-${message.uuid}-${blockIndex}`}
-          searchQuery={searchQuery}
-          citations={block.citations}
-        />
+        {plainText ? (
+          <PlainTextBlock
+            text={block.text}
+            matchPrefix={`heading-${message.uuid}-${blockIndex}`}
+            searchQuery={searchQuery}
+          />
+        ) : (
+          <MarkdownBlock
+            text={block.text}
+            anchorPrefix={`heading-${message.uuid}-${blockIndex}`}
+            searchQuery={searchQuery}
+            citations={block.citations}
+          />
+        )}
       </div>
     );
   }
@@ -424,16 +527,25 @@ export default function MessageView({
                 message={message}
                 block={part.item.block}
                 blockIndex={part.item.index}
+                plainText={isHuman}
                 searchQuery={highlightQuery}
               />
             )
           )
         : hasFallbackText && message.text && (
-            <MarkdownBlock
-              text={message.text}
-              anchorPrefix={`heading-${message.uuid}-fallback`}
-              searchQuery={highlightQuery}
-            />
+            isHuman ? (
+              <PlainTextBlock
+                text={message.text}
+                matchPrefix={`heading-${message.uuid}-fallback`}
+                searchQuery={highlightQuery}
+              />
+            ) : (
+              <MarkdownBlock
+                text={message.text}
+                anchorPrefix={`heading-${message.uuid}-fallback`}
+                searchQuery={highlightQuery}
+              />
+            )
           )}
     </>
   );
@@ -445,7 +557,6 @@ export default function MessageView({
       }`}
       id={`message-${message.uuid}`}
     >
-      {message.sender === "human" && <div className="sender-label">你</div>}
       <div className="message-content">
         {isHuman ? (
           <>

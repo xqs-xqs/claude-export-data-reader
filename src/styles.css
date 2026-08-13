@@ -1706,12 +1706,6 @@ html.is-resizing * {
   align-items: flex-end;
 }
 
-.sender-label {
-  margin: 0 9px 7px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .message-human .message-content {
   max-width: 86%;
   padding: 14px 16px;
@@ -1778,6 +1772,23 @@ html.is-resizing * {
 .message-human .markdown {
   font-size: calc(var(--chat-font-size) - 2px);
   line-height: 1.43;
+}
+
+.human-plain-text {
+  color: var(--chat-text);
+  font-family: var(--font-ui);
+  font-size: calc(var(--chat-font-size) - 2px);
+  font-variant-numeric: lining-nums proportional-nums;
+  line-height: 1.43;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.human-plain-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
 }
 
 .markdown {
