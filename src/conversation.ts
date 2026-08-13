@@ -38,7 +38,7 @@ function headingCandidatesFromText(
 ): AnswerHeadingCandidate[] {
   return parseHeadingCandidates(text).map((heading, index) => ({
     id: `${prefix}-${index}`,
-    level: 2,
+    level: heading.level,
     text: heading.text,
     fullText: heading.text,
     kind: "answer" as const,

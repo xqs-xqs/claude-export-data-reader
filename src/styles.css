@@ -2810,6 +2810,14 @@ html.is-resizing * {
   padding-left: 36px;
 }
 
+.outline nav button.outline-answer.outline-depth-1 {
+  padding-left: 52px;
+}
+
+.outline nav button.outline-answer.outline-depth-2 {
+  padding-left: 68px;
+}
+
 .outline-answer::after {
   position: absolute;
   top: 0;

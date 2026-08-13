@@ -843,6 +843,22 @@ function Outline({
       !heading.questionNumber ||
       heading.questionNumber === activeQuestionNumber
   );
+  const answerDepths = new Map<string, number>();
+  const headingStack: number[] = [];
+  visibleEntries.forEach((heading) => {
+    if (heading.kind === "question") {
+      headingStack.length = 0;
+      return;
+    }
+    while (
+      headingStack.length &&
+      headingStack[headingStack.length - 1] >= heading.level
+    ) {
+      headingStack.pop();
+    }
+    answerDepths.set(heading.id, Math.min(headingStack.length, 2));
+    headingStack.push(heading.level);
+  });
 
   return (
     <aside className="outline" id="conversation-outline">
@@ -858,7 +874,7 @@ function Outline({
         </button>
       </div>
       {headings.length ? (
-        <nav>
+        <nav aria-label="对话目录">
           {visibleEntries.map((heading) => (
             <button
               key={heading.id}
@@ -869,6 +885,10 @@ function Outline({
                 heading.questionNumber === activeQuestionNumber
                   ? "is-group-open"
                   : ""
+              } ${
+                heading.kind === "answer"
+                  ? `outline-depth-${answerDepths.get(heading.id) || 0}`
+                  : ""
               }`}
               title={heading.fullText || heading.text}
               onClick={() => onNavigate(heading.id)}
@@ -877,6 +897,7 @@ function Outline({
                   ? heading.questionNumber === activeQuestionNumber
                   : undefined
               }
+              aria-current={activeId === heading.id ? "location" : undefined}
             >
               {heading.kind === "question" && (
                 <span className="outline-question-index">
