@@ -5,9 +5,17 @@ const {
   dialog,
   ipcMain,
   Menu,
+  screen,
   shell
 } = require("electron");
 const { readFile, writeFile, mkdir } = require("node:fs/promises");
+const {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  renameSync,
+  rmSync
+} = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
 const {
@@ -32,9 +40,107 @@ let mainWindow;
 let libraryCache;
 let activeDevelopmentOrigin;
 let rendererSessionConfigured = false;
+let windowStateSaveTimer;
 
 function dataFilePath() {
   return path.join(app.getPath("userData"), "reader-data.json");
+}
+
+function windowStateFilePath() {
+  return path.join(app.getPath("userData"), "window-state.json");
+}
+
+function clampWindowBounds(bounds) {
+  if (
+    !bounds ||
+    !Number.isSafeInteger(bounds.x) ||
+    !Number.isSafeInteger(bounds.y) ||
+    !Number.isSafeInteger(bounds.width) ||
+    !Number.isSafeInteger(bounds.height) ||
+    bounds.width < 320 ||
+    bounds.height < 240 ||
+    bounds.width > 16384 ||
+    bounds.height > 16384
+  ) {
+    return undefined;
+  }
+  const displays = screen.getAllDisplays();
+  const display = displays.reduce((best, candidate) => {
+    const area = candidate.workArea;
+    const overlapWidth = Math.max(
+      0,
+      Math.min(bounds.x + bounds.width, area.x + area.width) -
+        Math.max(bounds.x, area.x)
+    );
+    const overlapHeight = Math.max(
+      0,
+      Math.min(bounds.y + bounds.height, area.y + area.height) -
+        Math.max(bounds.y, area.y)
+    );
+    const overlap = overlapWidth * overlapHeight;
+    return overlap > best.overlap ? { display: candidate, overlap } : best;
+  }, { display: screen.getPrimaryDisplay(), overlap: 0 }).display;
+  const area = display.workArea;
+  const width = Math.min(bounds.width, area.width);
+  const height = Math.min(bounds.height, area.height);
+  return {
+    width,
+    height,
+    x: Math.min(Math.max(bounds.x, area.x), area.x + area.width - width),
+    y: Math.min(Math.max(bounds.y, area.y), area.y + area.height - height)
+  };
+}
+
+function loadWindowState() {
+  try {
+    const parsed = JSON.parse(readFileSync(windowStateFilePath(), "utf8"));
+    const bounds = clampWindowBounds(parsed?.bounds);
+    return {
+      bounds,
+      maximized: parsed.maximized === true
+    };
+  } catch {
+    return {};
+  }
+}
+
+function defaultWindowBounds() {
+  const area = screen.getPrimaryDisplay().workArea;
+  const width = Math.min(1440, area.width);
+  const height = Math.min(920, area.height);
+  return {
+    width,
+    height,
+    x: area.x + Math.max(0, Math.floor((area.width - width) / 2)),
+    y: area.y + Math.max(0, Math.floor((area.height - height) / 2))
+  };
+}
+
+function saveWindowState(window) {
+  if (!window || window.isDestroyed()) return;
+  try {
+    const state = {
+      bounds: window.getNormalBounds(),
+      maximized: window.isMaximized()
+    };
+    mkdirSync(path.dirname(windowStateFilePath()), { recursive: true });
+    const temporaryPath = `${windowStateFilePath()}.${process.pid}.tmp`;
+    writeFileSync(temporaryPath, JSON.stringify(state), {
+      encoding: "utf8",
+      mode: 0o600
+    });
+    renameSync(temporaryPath, windowStateFilePath());
+  } catch {
+    try {
+      rmSync(`${windowStateFilePath()}.${process.pid}.tmp`, { force: true });
+    } catch {}
+    // Window restoration is best effort and must never prevent the app closing.
+  }
+}
+
+function scheduleWindowStateSave(window) {
+  clearTimeout(windowStateSaveTimer);
+  windowStateSaveTimer = setTimeout(() => saveWindowState(window), 250);
 }
 
 function normalizeLibrary(value) {
@@ -231,18 +337,23 @@ async function importArchive() {
 
 function createWindow() {
   const developmentUrl = developmentServerUrl();
+  const savedWindowState = loadWindowState();
+  const initialBounds = savedWindowState.bounds || defaultWindowBounds();
   activeDevelopmentOrigin = developmentUrl
     ? new URL(developmentUrl).origin
     : undefined;
 
-  mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 920,
-    minWidth: 980,
-    minHeight: 680,
+  const window = new BrowserWindow({
+    width: initialBounds.width,
+    height: initialBounds.height,
+    x: initialBounds.x,
+    y: initialBounds.y,
+    minWidth: Math.min(980, initialBounds.width),
+    minHeight: Math.min(680, initialBounds.height),
     backgroundColor: "#fcfcfb",
     title: "Claude 导出数据阅读器",
     autoHideMenuBar: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -250,10 +361,26 @@ function createWindow() {
       sandbox: true
     }
   });
-  mainWindow.setMenuBarVisibility(false);
+  mainWindow = window;
+  window.setMenuBarVisibility(false);
+  window.once("ready-to-show", () => {
+    if (savedWindowState.maximized) window.maximize();
+    window.show();
+  });
+  window.on("resize", () => scheduleWindowStateSave(window));
+  window.on("move", () => scheduleWindowStateSave(window));
+  window.on("maximize", () => scheduleWindowStateSave(window));
+  window.on("unmaximize", () => scheduleWindowStateSave(window));
+  window.on("close", () => {
+    clearTimeout(windowStateSaveTimer);
+    saveWindowState(window);
+  });
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = undefined;
+  });
 
-  configureRendererSession(mainWindow.webContents.session);
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  configureRendererSession(window.webContents.session);
+  window.webContents.setWindowOpenHandler(({ url }) => {
     openExternalUrl(url);
     return { action: "deny" };
   });
@@ -262,16 +389,16 @@ function createWindow() {
     event.preventDefault();
     openExternalUrl(url);
   };
-  mainWindow.webContents.on("will-navigate", guardNavigation);
-  mainWindow.webContents.on("will-redirect", guardNavigation);
-  mainWindow.webContents.on("will-attach-webview", (event) => {
+  window.webContents.on("will-navigate", guardNavigation);
+  window.webContents.on("will-redirect", guardNavigation);
+  window.webContents.on("will-attach-webview", (event) => {
     event.preventDefault();
   });
 
   if (developmentUrl) {
-    mainWindow.loadURL(developmentUrl);
+    window.loadURL(developmentUrl);
   } else {
-    mainWindow.loadFile(RENDERER_FILE_PATH);
+    window.loadFile(RENDERER_FILE_PATH);
   }
 }
 
@@ -280,7 +407,10 @@ if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (!mainWindow) return;
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createWindow();
+      return;
+    }
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });
