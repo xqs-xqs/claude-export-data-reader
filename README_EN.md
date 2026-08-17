@@ -51,6 +51,9 @@ A read-only desktop app for reviewing exported Claude conversations. Follows Cla
 - Independent font-size controls for the conversation, left sidebar, and right outline
 - A collapsible conversation outline built from user questions and primary answer headings
 - Scroll tracking and one-click navigation between conversation sections
+- Persistent local hiding for complete conversations or individual question-and-answer turns, available from the sidebar, prompt bubble, and outline
+- Reader history with Back and Forward buttons, `Alt+Left / Alt+Right`, and Windows mouse side-button support
+- Restoration of the last account, conversation or Memory view, sidebar state, and reading position on launch
 - Independently resizable sidebars for different screens and reading preferences
 - Repeated ZIP imports with SHA-256 duplicate detection
 - Account switching with strict data isolation: conversations, search results, Pinned items, and Memory are limited to the currently selected account
@@ -65,6 +68,7 @@ When enough metadata remains, Claude Export Data Reader displays a reconstructed
 
 - The selected ZIP is read without modifying the original file
 - Imported data is stored only in Electron's local application-data directory
+- **Delete** only hides an item persistently in the local reader UI. It does not modify the ZIP or imported conversation text, is not secure erasure, and has no restore action in the app
 - Conversation data is not uploaded and no Claude account or API key is required
 - Production builds block imported content from making network requests; HTTP/HTTPS links are handed to the system browser
 - Multiple exports can be imported over time; duplicate archives are detected before merging
@@ -110,7 +114,8 @@ This repository currently provides a source-based local build. A packaged Window
 3. When multiple accounts have been imported, switch accounts from the menu in the lower-left corner.
 4. Choose a conversation from the left sidebar, or open Memory to browse exported account and project memories.
 5. Use `Ctrl+F` to search the current conversation, or `Ctrl+Shift+F` to search the current account's local library.
-6. Adjust the theme, font sizes, sidebars, and conversation outline as needed.
+6. Use the top-bar buttons, `Alt+Left / Alt+Right`, or Windows mouse side buttons to move through recently visited reader locations.
+7. Adjust the theme, font sizes, sidebars, and conversation outline as needed.
 
 ## 📄 License
 
