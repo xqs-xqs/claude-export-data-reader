@@ -1030,6 +1030,26 @@ html.is-resizing * {
   border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 }
 
+.history-controls {
+  display: flex;
+  align-items: center;
+}
+
+.history-controls {
+  gap: 0;
+}
+
+.topbar .history-button {
+  width: 30px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.topbar .history-button svg {
+  width: 16px;
+  height: 16px;
+}
+
 .topbar-actions {
   display: flex;
   gap: 4px;

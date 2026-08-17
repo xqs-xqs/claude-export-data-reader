@@ -87,6 +87,13 @@ export const ArrowLeftIcon = (props: IconProps) => (
   </IconBase>
 );
 
+export const ArrowRightIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <path d="M5 12h14" />
+    <path d="m13 6 6 6-6 6" />
+  </IconBase>
+);
+
 export const CloseIcon = (props: IconProps) => (
   <IconBase {...props}>
     <path d="M6 6l12 12M18 6 6 18" />

@@ -491,6 +491,21 @@ function createWindow() {
     }
   });
   mainWindow = window;
+  let lastNativeNavigationCommand;
+  const dispatchNativeNavigationCommand = (direction, source) => {
+    const timestamp = Date.now();
+    if (
+      lastNativeNavigationCommand?.direction === direction &&
+      lastNativeNavigationCommand.source !== source &&
+      timestamp - lastNativeNavigationCommand.timestamp < 250
+    ) {
+      return;
+    }
+    lastNativeNavigationCommand = { direction, source, timestamp };
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send("reader:navigation-command", direction);
+    }
+  };
   window.setMenuBarVisibility(false);
   window.once("ready-to-show", () => {
     if (savedWindowState.maximized) window.maximize();
@@ -500,6 +515,29 @@ function createWindow() {
   window.on("move", () => scheduleWindowStateSave(window));
   window.on("maximize", () => scheduleWindowStateSave(window));
   window.on("unmaximize", () => scheduleWindowStateSave(window));
+  window.on("app-command", (event, command) => {
+    const direction =
+      command === "browser-backward"
+        ? "back"
+        : command === "browser-forward"
+          ? "forward"
+          : undefined;
+    if (!direction) return;
+    event.preventDefault();
+    dispatchNativeNavigationCommand(direction, "app-command");
+  });
+  if (process.platform === "win32") {
+    const WM_XBUTTONUP = 0x020c;
+    window.hookWindowMessage(WM_XBUTTONUP, (wParam) => {
+      if (!Buffer.isBuffer(wParam) || wParam.length < 4) return;
+      const xButton = (wParam.readUInt32LE(0) >>> 16) & 0xffff;
+      if (xButton === 1) {
+        dispatchNativeNavigationCommand("back", "xbutton");
+      } else if (xButton === 2) {
+        dispatchNativeNavigationCommand("forward", "xbutton");
+      }
+    });
+  }
   window.on("close", () => {
     clearTimeout(windowStateSaveTimer);
     saveWindowState(window);

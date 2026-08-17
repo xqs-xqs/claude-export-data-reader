@@ -46,6 +46,22 @@ import {
   searchConversationIndex
 } from "./search";
 import {
+  canNavigateHistory,
+  filterNavigationHistory,
+  historyEntryInDirection,
+  locationContextKey,
+  pushNavigationEntry,
+  replaceCurrentNavigationEntry,
+  seedNavigationHistory,
+  updateCurrentNavigationEntry,
+  type NavigationEntry,
+  type NavigationHistory,
+  type NavigationHighlight,
+  type ReaderLocation
+} from "./navigation";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
   ChevronIcon,
   CloseIcon,
   ImportIcon,
@@ -112,6 +128,7 @@ interface SearchTarget {
   messageId: string;
   query: string;
   sequence: number;
+  anchor: boolean;
 }
 
 type DeleteTarget =
@@ -124,6 +141,11 @@ type DeleteTarget =
       messageUuid: string;
       title: string;
     };
+
+interface PendingNavigationRestore {
+  entry: NavigationEntry;
+  anchorHighlight: boolean;
+}
 
 const DEFAULT_FONT_SETTINGS: FontSettings = {
   chat: 16,
@@ -365,6 +387,7 @@ function Sidebar({
   memoryActive,
   onSelect,
   onTogglePinned,
+  onDeleteConversation,
   onOpenMemory,
   onOpenSearch,
   onSelectAccount,
@@ -1227,6 +1250,21 @@ export default function App() {
   const hiddenItemsRef = useRef(hiddenItems);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>();
   const [deletePending, setDeletePending] = useState(false);
+  const navigationHistoryRef = useRef<NavigationHistory | undefined>(undefined);
+  const navigationCommandRef = useRef<(direction: -1 | 1) => void>(() => {});
+  const externalNavigationCommandRef = useRef<
+    (direction: -1 | 1, source: "dom" | "keyboard" | "native") => void
+  >(() => {});
+  const lastExternalNavigationRef = useRef<{
+    direction: -1 | 1;
+    source: "dom" | "keyboard" | "native";
+    timestamp: number;
+  } | undefined>(undefined);
+  const [, setNavigationHistoryRevision] = useState(0);
+  const pendingNavigationEntryRef = useRef<PendingNavigationRestore | undefined>(
+    undefined
+  );
+  const [navigationRestoreSequence, setNavigationRestoreSequence] = useState(0);
   const mainScrollPositionsRef = useRef<Record<string, number>>({
     ...(initialSession.mainScrollPositions || {})
   });
@@ -1473,11 +1511,6 @@ export default function App() {
   }, [hiddenItems]);
 
   useEffect(() => {
-    hiddenItemsRef.current = hiddenItems;
-    if (!window.readerAPI) persistHiddenItems(hiddenItems);
-  }, [hiddenItems]);
-
-  useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--chat-font-size", `${fontSettings.chat}px`);
     root.style.setProperty("--sidebar-font-size", `${fontSettings.sidebar}px`);
@@ -1595,6 +1628,16 @@ export default function App() {
   }, [sessionHydrated, sessionSelectionsValid]);
 
   useEffect(() => {
+    if (!sessionHydrated || !window.readerAPI?.onNavigationCommand) return;
+    return window.readerAPI.onNavigationCommand((direction) => {
+      externalNavigationCommandRef.current(
+        direction === "back" ? -1 : 1,
+        "native"
+      );
+    });
+  }, [sessionHydrated]);
+
+  useEffect(() => {
     if (window.readerAPI) {
       Promise.all([
         window.readerAPI.getLibrary(),
@@ -1622,9 +1665,68 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    function mouseSideNavigation(event: MouseEvent) {
+      const direction = event.button === 3 ? -1 : event.button === 4 ? 1 : 0;
+      if (!direction) return;
+      event.preventDefault();
+      event.stopPropagation();
+      externalNavigationCommandRef.current(direction, "dom");
+    }
+
+    function blockNativeAuxiliaryNavigation(event: MouseEvent) {
+      if (event.button !== 3 && event.button !== 4) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    window.addEventListener("mouseup", mouseSideNavigation, true);
+    window.addEventListener("auxclick", blockNativeAuxiliaryNavigation, true);
+    return () => {
+      window.removeEventListener("mouseup", mouseSideNavigation, true);
+      window.removeEventListener(
+        "auxclick",
+        blockNativeAuxiliaryNavigation,
+        true
+      );
+    };
+  }, []);
+
+  useEffect(() => {
     function keyboardShortcut(event: KeyboardEvent) {
       const commandKey = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
+
+      if (
+        event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        !event.repeat &&
+        (event.key === "ArrowLeft" || event.key === "ArrowRight")
+      ) {
+        event.preventDefault();
+        externalNavigationCommandRef.current(
+          event.key === "ArrowLeft" ? -1 : 1,
+          "keyboard"
+        );
+        return;
+      }
+
+      if (
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        !event.repeat &&
+        (event.key === "BrowserBack" || event.key === "BrowserForward")
+      ) {
+        event.preventDefault();
+        externalNavigationCommandRef.current(
+          event.key === "BrowserBack" ? -1 : 1,
+          "keyboard"
+        );
+        return;
+      }
 
       if (event.key === "Escape") {
         setFontMenuOpen(false);
@@ -1735,7 +1837,9 @@ export default function App() {
     primaryView === "conversation"
       ? selectedKey
         ? `conversation:${selectedKey}`
-        : undefined
+        : activeAccountUuid
+          ? `account:${activeAccountUuid}:empty`
+          : undefined
       : activeAccountUuid
         ? `memory:${activeAccountUuid}:${memoryScope}:${
             activeProjectMemoryUuid || "account"
@@ -1744,8 +1848,287 @@ export default function App() {
   const sidebarViewContextKey = activeAccountUuid
     ? `account:${activeAccountUuid}`
     : undefined;
+  const currentReaderLocation = useMemo<ReaderLocation | undefined>(() => {
+    if (!activeAccountUuid) return undefined;
+    if (primaryView === "conversation") {
+      return selectedKey
+        ? {
+            kind: "conversation",
+            accountUuid: activeAccountUuid,
+            conversationKey: selectedKey
+          }
+        : {
+            kind: "account",
+            accountUuid: activeAccountUuid
+          };
+    }
+    if (!activeMemory) return undefined;
+    return {
+      kind: "memory",
+      accountUuid: activeAccountUuid,
+      scope: memoryScope,
+      projectUuid:
+        memoryScope === "project" ? activeProjectMemoryUuid : undefined,
+      filePath:
+        memoryScope === "account" ? selectedMemoryFilePath : undefined
+    };
+  }, [
+    activeAccountUuid,
+    activeMemory,
+    activeProjectMemoryUuid,
+    memoryScope,
+    primaryView,
+    selectedKey,
+    selectedMemoryFilePath
+  ]);
+  useEffect(() => {
+    if (!sessionHydrated || !currentReaderLocation) return;
+    const contextKey = locationContextKey(currentReaderLocation);
+    const history = navigationHistoryRef.current;
+    if (history) {
+      const current = history.entries[history.index];
+      if (
+        !pendingNavigationEntryRef.current &&
+        (!current || locationContextKey(current.location) !== contextKey)
+      ) {
+        commitNavigationHistory(
+          replaceCurrentNavigationEntry(history, currentReaderLocation, {
+            mainScrollTop: mainScrollPositionsRef.current[contextKey] || 0,
+            activeHeading: activeHeadingsRef.current[contextKey]
+          })
+        );
+      }
+      return;
+    }
+    commitNavigationHistory(
+      seedNavigationHistory(
+        currentReaderLocation,
+        mainScrollPositionsRef.current[contextKey] || 0,
+        activeHeadingsRef.current[contextKey]
+      )
+    );
+  }, [currentReaderLocation, sessionHydrated]);
+  const canNavigateBack = canNavigateHistory(
+    navigationHistoryRef.current,
+    -1,
+    isNavigationEntryValid
+  );
+  const canNavigateForward = canNavigateHistory(
+    navigationHistoryRef.current,
+    1,
+    isNavigationEntryValid
+  );
 
   const sessionSnapshotRef = useRef<ReaderSessionState>(initialSession);
+
+  function commitNavigationHistory(history: NavigationHistory | undefined) {
+    navigationHistoryRef.current = history;
+    setNavigationHistoryRevision((value) => value + 1);
+  }
+
+  function captureCurrentNavigationEntry(
+    history = navigationHistoryRef.current
+  ) {
+    if (!history) return history;
+    const current = history.entries[history.index];
+    if (
+      !current ||
+      !currentReaderLocation ||
+      locationContextKey(current.location) !==
+        locationContextKey(currentReaderLocation)
+    ) {
+      return history;
+    }
+    const scroller = document.querySelector<HTMLElement>(
+      ".conversation-scroll"
+    );
+    return updateCurrentNavigationEntry(history, {
+      mainScrollTop: scroller?.scrollTop || 0,
+      activeHeading
+    });
+  }
+
+  function isNavigationEntryValid(entry: NavigationEntry) {
+    const { location } = entry;
+    if (
+      !library.accounts.some((account) => account.uuid === location.accountUuid)
+    ) {
+      return false;
+    }
+    if (location.kind === "account") return true;
+    if (location.kind === "conversation") {
+      const conversation = library.conversations.find(
+        (item) =>
+          item.account_uuid === location.accountUuid &&
+          conversationKey(item) === location.conversationKey
+      );
+      return Boolean(
+        conversation &&
+          !hiddenItemsRef.current.conversationKeys.includes(
+            hiddenConversationKey(
+              conversation.account_uuid,
+              conversation.uuid
+            )
+          )
+      );
+    }
+
+    const memory = memoryRecords.find(
+      (record) => record.account_uuid === location.accountUuid
+    );
+    if (!memory) return false;
+    if (location.scope === "project") {
+      return Boolean(
+        location.projectUuid &&
+          Object.prototype.hasOwnProperty.call(
+            memory.project_memories || {},
+            location.projectUuid
+          )
+      );
+    }
+    return (
+      !location.filePath ||
+      Boolean(memory.memory_files?.some((file) => file.path === location.filePath))
+    );
+  }
+
+  function applyNavigationEntry(
+    entry: NavigationEntry,
+    anchorHighlight = false
+  ) {
+    const { location } = entry;
+    const contextKey = locationContextKey(location);
+    mainScrollPositionsRef.current[contextKey] = entry.mainScrollTop;
+    if (entry.activeHeading) {
+      activeHeadingsRef.current[contextKey] = entry.activeHeading;
+    } else {
+      delete activeHeadingsRef.current[contextKey];
+    }
+    pendingNavigationEntryRef.current = { entry, anchorHighlight };
+
+    setSelectedAccountUuid(location.accountUuid);
+    localStorage.setItem("selected-account-uuid", location.accountUuid);
+    setGlobalSearchOpen(false);
+    setConversationFindOpen(false);
+    setConversationFindQuery("");
+    setFontMenuOpen(false);
+
+    if (location.kind === "account") {
+      setPrimaryView("conversation");
+      setSelectedKey(undefined);
+      setSearchTarget(undefined);
+    } else if (location.kind === "conversation") {
+      setPrimaryView("conversation");
+      setSelectedKey(location.conversationKey);
+      if (entry.highlight) {
+        searchSequence.current += 1;
+        setSearchTarget({
+          conversationKey: location.conversationKey,
+          messageId: entry.highlight.messageId,
+          query: entry.highlight.query,
+          sequence: searchSequence.current,
+          anchor: anchorHighlight
+        });
+      } else {
+        setSearchTarget(undefined);
+      }
+    } else {
+      setPrimaryView("memory");
+      setMemoryScope(location.scope);
+      setSelectedProjectMemoryUuid(location.projectUuid);
+      setSelectedMemoryFilePath(location.filePath);
+      setSearchTarget(undefined);
+    }
+    setNavigationRestoreSequence((value) => value + 1);
+  }
+
+  function pushReaderNavigation(
+    location: ReaderLocation,
+    options: { highlight?: NavigationHighlight; anchorHighlight?: boolean } = {}
+  ) {
+    if (
+      location.kind === "conversation" &&
+      !isNavigationEntryValid({
+        id: 0,
+        location,
+        mainScrollTop: 0
+      })
+    ) {
+      return;
+    }
+    let history = captureCurrentNavigationEntry();
+    if (!history) {
+      const initialLocation = currentReaderLocation || location;
+      const initialContext = locationContextKey(initialLocation);
+      history = seedNavigationHistory(
+        initialLocation,
+        mainScrollPositionsRef.current[initialContext] || 0,
+        activeHeadingsRef.current[initialContext]
+      );
+    }
+    const contextKey = locationContextKey(location);
+    const next = pushNavigationEntry(history, location, {
+      highlight: options.highlight,
+      mainScrollTop: options.highlight
+        ? 0
+        : mainScrollPositionsRef.current[contextKey] || 0,
+      activeHeading: options.highlight
+        ? undefined
+        : activeHeadingsRef.current[contextKey]
+    });
+    commitNavigationHistory(next);
+    const entry = next.entries[next.index];
+    if (entry) applyNavigationEntry(entry, options.anchorHighlight === true);
+  }
+
+  function replaceReaderNavigation(location: ReaderLocation) {
+    let history = captureCurrentNavigationEntry();
+    const contextKey = locationContextKey(location);
+    history = history
+      ? replaceCurrentNavigationEntry(history, location, {
+          mainScrollTop: mainScrollPositionsRef.current[contextKey] || 0,
+          activeHeading: activeHeadingsRef.current[contextKey]
+        })
+      : seedNavigationHistory(
+          location,
+          mainScrollPositionsRef.current[contextKey] || 0,
+          activeHeadingsRef.current[contextKey]
+        );
+    commitNavigationHistory(history);
+    const entry = history.entries[history.index];
+    if (entry) applyNavigationEntry(entry);
+  }
+
+  function navigateReaderHistory(direction: -1 | 1) {
+    if (deleteTarget || globalSearchOpen) return;
+    const captured = captureCurrentNavigationEntry();
+    if (!captured) return;
+    const result = historyEntryInDirection(
+      captured,
+      direction,
+      isNavigationEntryValid
+    );
+    if (!result) {
+      commitNavigationHistory(captured);
+      return;
+    }
+    commitNavigationHistory(result.history);
+    applyNavigationEntry(result.entry, false);
+  }
+  navigationCommandRef.current = navigateReaderHistory;
+  externalNavigationCommandRef.current = (direction, source) => {
+    const timestamp = performance.now();
+    const previous = lastExternalNavigationRef.current;
+    if (
+      previous?.direction === direction &&
+      previous.source !== source &&
+      timestamp - previous.timestamp < 300
+    ) {
+      return;
+    }
+    lastExternalNavigationRef.current = { direction, source, timestamp };
+    navigationCommandRef.current(direction);
+  };
 
   function persistSessionSnapshot() {
     try {
@@ -1885,6 +2268,18 @@ export default function App() {
     });
     const track = () => {
       mainScrollPositionsRef.current[mainViewContextKey] = scroller.scrollTop;
+      const history = navigationHistoryRef.current;
+      const entry = history?.entries[history.index];
+      if (
+        history &&
+        entry &&
+        locationContextKey(entry.location) === mainViewContextKey
+      ) {
+        navigationHistoryRef.current = updateCurrentNavigationEntry(history, {
+          mainScrollTop: scroller.scrollTop,
+          activeHeading: activeHeadingsRef.current[mainViewContextKey]
+        });
+      }
       scheduleSessionPersist();
     };
     scroller.addEventListener("scroll", track, { passive: true });
@@ -1893,6 +2288,34 @@ export default function App() {
       scroller.removeEventListener("scroll", track);
     };
   }, [mainViewContextKey, sessionHydrated]);
+
+  useLayoutEffect(() => {
+    const pending = pendingNavigationEntryRef.current;
+    if (!pending || !mainViewContextKey) return;
+    if (locationContextKey(pending.entry.location) !== mainViewContextKey) {
+      return;
+    }
+    if (pending.anchorHighlight) return;
+
+    const scroller = document.querySelector<HTMLElement>(
+      ".conversation-scroll"
+    );
+    if (!scroller) return;
+    const position = Math.min(
+      pending.entry.mainScrollTop,
+      Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+    );
+    scroller.scrollTop = position;
+    setActiveHeading(pending.entry.activeHeading);
+    pendingNavigationEntryRef.current = undefined;
+    const frame = window.requestAnimationFrame(() => {
+      scroller.scrollTop = Math.min(
+        position,
+        Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+      );
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [mainViewContextKey, navigationRestoreSequence]);
 
   useLayoutEffect(() => {
     if (!sessionHydrated || !sidebarOpen || !sidebarViewContextKey) return;
@@ -1987,6 +2410,23 @@ export default function App() {
           setActiveHeading(id);
           if (mainViewContextKey) {
             activeHeadingsRef.current[mainViewContextKey] = id;
+            const history = navigationHistoryRef.current;
+            const current = history?.entries[history.index];
+            if (
+              history &&
+              current &&
+              locationContextKey(current.location) === mainViewContextKey
+            ) {
+              navigationHistoryRef.current = updateCurrentNavigationEntry(
+                history,
+                {
+                  mainScrollTop:
+                    document.querySelector<HTMLElement>(".conversation-scroll")
+                      ?.scrollTop || 0,
+                  activeHeading: id
+                }
+              );
+            }
             scheduleSessionPersist();
           }
         }
@@ -2013,6 +2453,7 @@ export default function App() {
     if (
       primaryView !== "conversation" ||
       !searchTarget ||
+      !searchTarget.anchor ||
       searchTarget.conversationKey !== selectedKey
     ) {
       return;
@@ -2024,7 +2465,30 @@ export default function App() {
       const message = document.getElementById(
         `message-${searchTarget.messageId}`
       );
-      if (!scroller || !message || !scroller.contains(message)) return;
+      if (!scroller || !message || !scroller.contains(message)) {
+        pendingNavigationEntryRef.current = undefined;
+        setSearchTarget((current) =>
+          current?.sequence === searchTarget.sequence
+            ? { ...current, anchor: false }
+            : current
+        );
+        const history = navigationHistoryRef.current;
+        const current = history?.entries[history.index];
+        if (
+          history &&
+          current?.highlight?.messageId === searchTarget.messageId
+        ) {
+          const entries = [...history.entries];
+          entries[history.index] = {
+            ...current,
+            mainScrollTop: scroller?.scrollTop || current.mainScrollTop,
+            activeHeading,
+            highlight: undefined
+          };
+          commitNavigationHistory({ ...history, entries });
+        }
+        return;
+      }
 
       const target =
         message.querySelector<HTMLElement>(".search-highlight") || message;
@@ -2058,6 +2522,12 @@ export default function App() {
           ? "auto"
           : "smooth"
       });
+      pendingNavigationEntryRef.current = undefined;
+      setSearchTarget((current) =>
+        current?.sequence === searchTarget.sequence
+          ? { ...current, anchor: false }
+          : current
+      );
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -2185,31 +2655,64 @@ export default function App() {
         if (newlyImportedAccount) {
           const nextConversations = result.library.conversations.filter(
             (conversation) =>
-              conversation.account_uuid === newlyImportedAccount.uuid
+              conversation.account_uuid === newlyImportedAccount.uuid &&
+              !hiddenItemsRef.current.conversationKeys.includes(
+                hiddenConversationKey(
+                  conversation.account_uuid,
+                  conversation.uuid
+                )
+              )
           );
-          const nextMemory = result.library.memories.some(
+          const nextMemories = result.library.memories.filter(
             (memory) => memory.account_uuid === newlyImportedAccount.uuid
           );
-          setSelectedAccountUuid(newlyImportedAccount.uuid);
-          localStorage.setItem(
-            "selected-account-uuid",
-            newlyImportedAccount.uuid
-          );
+          const nextMemory = nextMemories[nextMemories.length - 1];
           setGlobalSearchQuery("");
-          setGlobalSearchOpen(false);
-          setSearchTarget(undefined);
-          setConversationFindOpen(false);
-          setConversationFindQuery("");
-          setSelectedMemoryFilePath(undefined);
-          setSelectedKey(
-            nextConversations[0]
-              ? conversationKey(nextConversations[0])
-              : undefined
-          );
-          if (!nextConversations.length && nextMemory) {
-            setPrimaryView("memory");
-          } else if (nextConversations.length) {
-            setPrimaryView("conversation");
+          let location: ReaderLocation | undefined;
+          if (nextConversations[0]) {
+            location = {
+              kind: "conversation",
+              accountUuid: newlyImportedAccount.uuid,
+              conversationKey: conversationKey(nextConversations[0])
+            };
+          } else if (nextMemory) {
+            const hasAccountMemory = Boolean(
+              nextMemory.conversations_memory?.trim() ||
+                nextMemory.memory_files?.some((file) => file.content.trim())
+            );
+            const projectUuid = Object.keys(
+              nextMemory.project_memories || {}
+            )[0];
+            location = hasAccountMemory
+              ? {
+                  kind: "memory",
+                  accountUuid: newlyImportedAccount.uuid,
+                  scope: "account"
+                }
+              : projectUuid
+                ? {
+                    kind: "memory",
+                    accountUuid: newlyImportedAccount.uuid,
+                    scope: "project",
+                    projectUuid
+                  }
+                : {
+                    kind: "account",
+                    accountUuid: newlyImportedAccount.uuid
+                  };
+          } else {
+            location = {
+              kind: "account",
+              accountUuid: newlyImportedAccount.uuid
+            };
+          }
+          if (location) {
+            const currentHistory = captureCurrentNavigationEntry();
+            const nextHistory = currentHistory
+              ? pushNavigationEntry(currentHistory, location)
+              : seedNavigationHistory(location, 0);
+            commitNavigationHistory(nextHistory);
+            applyNavigationEntry(nextHistory.entries[nextHistory.index]);
           }
         }
       }
@@ -2233,11 +2736,11 @@ export default function App() {
 
   function selectConversation(conversation: Conversation) {
     if (conversation.account_uuid !== activeAccountUuid) return;
-    setPrimaryView("conversation");
-    setSelectedKey(conversationKey(conversation));
-    setSearchTarget(undefined);
-    setConversationFindOpen(false);
-    setConversationFindQuery("");
+    pushReaderNavigation({
+      kind: "conversation",
+      accountUuid: conversation.account_uuid,
+      conversationKey: conversationKey(conversation)
+    });
   }
 
   function selectAccount(accountUuid: string) {
@@ -2249,35 +2752,63 @@ export default function App() {
     }
 
     const nextConversations = library.conversations.filter(
-      (conversation) => conversation.account_uuid === accountUuid
+      (conversation) =>
+        conversation.account_uuid === accountUuid &&
+        !hiddenConversationKeys.has(
+          hiddenConversationKey(
+            conversation.account_uuid,
+            conversation.uuid
+          )
+        )
     );
     const nextMemory = memoryRecords.find(
       (memory) => memory.account_uuid === accountUuid
     );
-    setSelectedAccountUuid(accountUuid);
-    localStorage.setItem("selected-account-uuid", accountUuid);
-    setSelectedKey(
-      nextConversations[0] ? conversationKey(nextConversations[0]) : undefined
-    );
     setGlobalSearchQuery("");
-    setGlobalSearchOpen(false);
-    setSearchTarget(undefined);
-    setConversationFindOpen(false);
-    setConversationFindQuery("");
-    setSelectedMemoryFilePath(undefined);
-    setSelectedProjectMemoryUuid(undefined);
-
-    if (primaryView === "memory" && !nextMemory && nextConversations.length) {
-      setPrimaryView("conversation");
-    } else if (
-      primaryView === "conversation" &&
-      !nextConversations.length &&
-      nextMemory
-    ) {
-      setPrimaryView("memory");
+    if (primaryView === "memory" && nextMemory) {
+      const nextHasAccountMemory = Boolean(
+        nextMemory.conversations_memory?.trim() ||
+          nextMemory.memory_files?.some((file) => file.content.trim())
+      );
+      const nextProjectUuid = Object.keys(nextMemory.project_memories || {})[0];
+      if (nextHasAccountMemory || nextProjectUuid) {
+        const nextScope: MemoryScope = nextHasAccountMemory
+          ? "account"
+          : "project";
+        pushReaderNavigation({
+          kind: "memory",
+          accountUuid,
+          scope: nextScope,
+          projectUuid: nextScope === "project" ? nextProjectUuid : undefined
+        });
+        return;
+      }
     }
-
-    setFontMenuOpen(false);
+    if (nextConversations[0]) {
+      pushReaderNavigation({
+        kind: "conversation",
+        accountUuid,
+        conversationKey: conversationKey(nextConversations[0])
+      });
+      return;
+    }
+    if (nextMemory) {
+      const nextProjectUuid = Object.keys(nextMemory.project_memories || {})[0];
+      const nextHasAccountMemory = Boolean(
+        nextMemory.conversations_memory?.trim() ||
+          nextMemory.memory_files?.some((file) => file.content.trim())
+      );
+      if (nextHasAccountMemory || nextProjectUuid) {
+        pushReaderNavigation({
+          kind: "memory",
+          accountUuid,
+          scope: nextHasAccountMemory ? "account" : "project",
+          projectUuid: nextHasAccountMemory ? undefined : nextProjectUuid
+        });
+        return;
+      }
+    }
+    pushReaderNavigation({ kind: "account", accountUuid });
   }
 
   async function toggleConversationPinned(conversation: Conversation) {
@@ -2323,29 +2854,68 @@ export default function App() {
   }
 
   function openMemory() {
-    setPrimaryView("memory");
-    setSelectedMemoryFilePath(undefined);
-    setSearchTarget(undefined);
-    setConversationFindOpen(false);
-    setConversationFindQuery("");
-    if (!hasActiveAccountMemory && memoryProjectOptions.length) {
-      setMemoryScope("project");
-    }
-    setFontMenuOpen(false);
+    if (!activeAccountUuid || !activeMemory) return;
+    const scope: MemoryScope =
+      !hasActiveAccountMemory && memoryProjectOptions.length
+        ? "project"
+        : "account";
+    pushReaderNavigation({
+      kind: "memory",
+      accountUuid: activeAccountUuid,
+      scope,
+      projectUuid:
+        scope === "project" ? activeProjectMemoryUuid : undefined
+    });
   }
 
   function selectMemoryScope(scope: MemoryScope) {
-    setMemoryScope(scope);
-    setSelectedMemoryFilePath(undefined);
+    if (!activeAccountUuid || !activeMemory) return;
+    pushReaderNavigation({
+      kind: "memory",
+      accountUuid: activeAccountUuid,
+      scope,
+      projectUuid:
+        scope === "project" ? activeProjectMemoryUuid : undefined
+    });
   }
 
   function selectProjectMemory(projectUuid: string) {
-    setSelectedProjectMemoryUuid(projectUuid);
-    setSelectedMemoryFilePath(undefined);
+    if (!activeAccountUuid || !activeMemory) return;
+    pushReaderNavigation({
+      kind: "memory",
+      accountUuid: activeAccountUuid,
+      scope: "project",
+      projectUuid
+    });
   }
 
   function selectMemoryFile(path: string | undefined) {
-    setSelectedMemoryFilePath(path);
+    if (!activeAccountUuid || !activeMemory) return;
+    if (!path && selectedMemoryFilePath) {
+      const history = navigationHistoryRef.current;
+      const previous = history?.entries[history.index - 1];
+      if (
+        previous?.location.kind === "memory" &&
+        previous.location.accountUuid === activeAccountUuid &&
+        previous.location.scope === "account" &&
+        !previous.location.filePath
+      ) {
+        navigateReaderHistory(-1);
+        return;
+      }
+      replaceReaderNavigation({
+        kind: "memory",
+        accountUuid: activeAccountUuid,
+        scope: "account"
+      });
+      return;
+    }
+    pushReaderNavigation({
+      kind: "memory",
+      accountUuid: activeAccountUuid,
+      scope: "account",
+      filePath: path
+    });
   }
 
   function openGlobalSearch() {
@@ -2390,23 +2960,20 @@ export default function App() {
     query: string
   ) {
     const nextConversationKey = conversationKey(conversation);
-    const nextContextKey = `conversation:${nextConversationKey}`;
-    if (primaryView !== "conversation" || nextConversationKey !== selectedKey) {
-      suppressMainRestoreKeyRef.current = nextContextKey;
-      suppressHeadingRestoreKeyRef.current = nextContextKey;
-      suppressOutlineRestoreKeyRef.current = nextContextKey;
-    }
-    searchSequence.current += 1;
-    setConversationFindOpen(false);
-    setConversationFindQuery("");
-    setPrimaryView("conversation");
-    setSelectedKey(nextConversationKey);
-    setSearchTarget({
-      conversationKey: nextConversationKey,
-      messageId,
-      query: normalizeSearchText(query),
-      sequence: searchSequence.current
-    });
+    pushReaderNavigation(
+      {
+        kind: "conversation",
+        accountUuid: conversation.account_uuid,
+        conversationKey: nextConversationKey
+      },
+      {
+        highlight: {
+          messageId,
+          query: normalizeSearchText(query)
+        },
+        anchorHighlight: true
+      }
+    );
   }
 
   function requestDeleteConversation(conversation: Conversation) {
@@ -2478,6 +3045,7 @@ export default function App() {
       setSearchTarget(undefined);
       setConversationFindOpen(false);
       setConversationFindQuery("");
+
       const conversation = library.conversations.find(
         (item) =>
           item.account_uuid === target.accountUuid &&
@@ -2486,15 +3054,48 @@ export default function App() {
       const hiddenTurnMessageIds = conversation
         ? questionTurnMessageIds(conversation, target.messageUuid)
         : new Set<string>();
-      if (
-        activeHeading &&
-        [...hiddenTurnMessageIds].some(
-          (messageUuid) =>
-            activeHeading === `message-${messageUuid}` ||
-            activeHeading.startsWith(`heading-${messageUuid}-`)
-        )
-      ) {
+      const headingBelongsToHiddenTurn = (headingId?: string) =>
+        Boolean(
+          headingId &&
+            [...hiddenTurnMessageIds].some(
+              (messageUuid) =>
+                headingId === `message-${messageUuid}` ||
+                headingId.startsWith(`heading-${messageUuid}-`)
+            )
+        );
+      if (headingBelongsToHiddenTurn(activeHeading)) {
         setActiveHeading(undefined);
+      }
+      const contextKey = `conversation:${target.conversationKey}`;
+      if (
+        headingBelongsToHiddenTurn(activeHeadingsRef.current[contextKey])
+      ) {
+        delete activeHeadingsRef.current[contextKey];
+      }
+      const history = captureCurrentNavigationEntry();
+      if (history) {
+        commitNavigationHistory({
+          ...history,
+          entries: history.entries.map((entry) => {
+            if (
+              entry.location.kind !== "conversation" ||
+              entry.location.conversationKey !== target.conversationKey
+            ) {
+              return entry;
+            }
+            return {
+              ...entry,
+              activeHeading: headingBelongsToHiddenTurn(entry.activeHeading)
+                ? undefined
+                : entry.activeHeading,
+              highlight:
+                entry.highlight &&
+                hiddenTurnMessageIds.has(entry.highlight.messageId)
+                  ? undefined
+                  : entry.highlight
+            };
+          })
+        });
       }
       return;
     }
@@ -2504,18 +3105,81 @@ export default function App() {
     setSearchTarget(undefined);
     setConversationFindOpen(false);
     setConversationFindQuery("");
+
+    const prunedHistory = navigationHistoryRef.current
+      ? filterNavigationHistory(
+          navigationHistoryRef.current,
+          (entry) =>
+            !(
+              entry.location.kind === "conversation" &&
+              entry.location.conversationKey === deletedKey
+            )
+        )
+      : undefined;
+    commitNavigationHistory(prunedHistory);
+
     if (selectedKey !== deletedKey) return;
     const nextConversation = library.conversations.find(
       (conversation) =>
         conversation.account_uuid === target.conversation.account_uuid &&
         !nextHidden.conversationKeys.includes(
-          hiddenConversationKey(conversation.account_uuid, conversation.uuid)
+          hiddenConversationKey(
+            conversation.account_uuid,
+            conversation.uuid
+          )
         )
     );
-    setPrimaryView("conversation");
-    setSelectedKey(
-      nextConversation ? conversationKey(nextConversation) : undefined
-    );
+    if (nextConversation) {
+      const location: ReaderLocation = {
+        kind: "conversation",
+        accountUuid: nextConversation.account_uuid,
+        conversationKey: conversationKey(nextConversation)
+      };
+      const contextKey = locationContextKey(location);
+      const nextHistory = prunedHistory
+        ? pushNavigationEntry(prunedHistory, location, {
+            mainScrollTop: mainScrollPositionsRef.current[contextKey] || 0,
+            activeHeading: activeHeadingsRef.current[contextKey]
+          })
+        : seedNavigationHistory(
+            location,
+            mainScrollPositionsRef.current[contextKey] || 0,
+            activeHeadingsRef.current[contextKey]
+          );
+      commitNavigationHistory(nextHistory);
+      const entry = nextHistory.entries[nextHistory.index];
+      if (entry) applyNavigationEntry(entry);
+      return;
+    }
+    if (
+      activeMemory &&
+      activeAccountUuid &&
+      (hasActiveAccountMemory || activeProjectMemoryUuid)
+    ) {
+      const scope: MemoryScope = hasActiveAccountMemory ? "account" : "project";
+      const location: ReaderLocation = {
+        kind: "memory",
+        accountUuid: activeAccountUuid,
+        scope,
+        projectUuid:
+          scope === "project" ? activeProjectMemoryUuid : undefined
+      };
+      const nextHistory = prunedHistory
+        ? pushNavigationEntry(prunedHistory, location)
+        : seedNavigationHistory(location, 0);
+      commitNavigationHistory(nextHistory);
+      applyNavigationEntry(nextHistory.entries[nextHistory.index]);
+      return;
+    }
+    const location: ReaderLocation = {
+      kind: "account",
+      accountUuid: target.conversation.account_uuid
+    };
+    const nextHistory = prunedHistory
+      ? pushNavigationEntry(prunedHistory, location)
+      : seedNavigationHistory(location, 0);
+    commitNavigationHistory(nextHistory);
+    applyNavigationEntry(nextHistory.entries[nextHistory.index]);
   }
 
   function panelMaximum(side: PanelSide) {
@@ -2739,6 +3403,28 @@ export default function App() {
                 : ""}
           </div>
           <div className="topbar-actions">
+            <div className="history-controls" role="group" aria-label="页面历史">
+              <button
+                className="icon-button history-button"
+                type="button"
+                onClick={() => navigateReaderHistory(-1)}
+                disabled={!canNavigateBack}
+                aria-label="后退"
+                title="后退（Alt + ← / 鼠标后退键）"
+              >
+                <ArrowLeftIcon />
+              </button>
+              <button
+                className="icon-button history-button"
+                type="button"
+                onClick={() => navigateReaderHistory(1)}
+                disabled={!canNavigateForward}
+                aria-label="前进"
+                title="前进（Alt + → / 鼠标前进键）"
+              >
+                <ArrowRightIcon />
+              </button>
+            </div>
             {primaryView === "conversation" && selectedConversation && (
               <button
                 className={`icon-button conversation-pin-topbar ${
