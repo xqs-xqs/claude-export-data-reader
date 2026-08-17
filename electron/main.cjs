@@ -8,7 +8,7 @@ const {
   screen,
   shell
 } = require("electron");
-const { readFile, writeFile, mkdir } = require("node:fs/promises");
+const { readFile, writeFile, mkdir, rename } = require("node:fs/promises");
 const {
   readFileSync,
   writeFileSync,
@@ -35,15 +35,28 @@ const EMPTY_LIBRARY = {
   memories: [],
   pinned_conversations: []
 };
+const EMPTY_HIDDEN_ITEMS = {
+  version: 1,
+  conversationKeys: [],
+  questionIdsByConversation: {}
+};
+const MAX_HIDDEN_CONVERSATIONS = 100_000;
+const MAX_HIDDEN_QUESTIONS = 2_000_000;
 
 let mainWindow;
 let libraryCache;
+let hiddenItemsCache;
+let hiddenItemsMutationQueue = Promise.resolve();
 let activeDevelopmentOrigin;
 let rendererSessionConfigured = false;
 let windowStateSaveTimer;
 
 function dataFilePath() {
   return path.join(app.getPath("userData"), "reader-data.json");
+}
+
+function hiddenItemsFilePath() {
+  return path.join(app.getPath("userData"), "reader-hidden-items.json");
 }
 
 function windowStateFilePath() {
@@ -166,9 +179,125 @@ async function saveLibrary(library) {
     encoding: "utf8",
     mode: 0o600
   });
-  const { rename } = require("node:fs/promises");
   await rename(temporaryPath, dataFilePath());
   libraryCache = library;
+}
+
+function persistedIdentifier(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 8192
+    ? value
+    : undefined;
+}
+
+function hiddenConversationKey(accountUuid, conversationUuid) {
+  return JSON.stringify([accountUuid, conversationUuid]);
+}
+
+function normalizeHiddenConversationKey(value) {
+  if (typeof value !== "string") return undefined;
+  try {
+    const tuple = JSON.parse(value);
+    if (!Array.isArray(tuple) || tuple.length !== 2) return undefined;
+    const accountUuid = persistedIdentifier(tuple[0]);
+    const conversationUuid = persistedIdentifier(tuple[1]);
+    return accountUuid && conversationUuid
+      ? hiddenConversationKey(accountUuid, conversationUuid)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeHiddenItems(value) {
+  if (!value || typeof value !== "object" || value.version !== 1) {
+    return structuredClone(EMPTY_HIDDEN_ITEMS);
+  }
+
+  const conversationKeys = Array.from(
+    new Set(
+      (Array.isArray(value.conversationKeys) ? value.conversationKeys : [])
+        .map(normalizeHiddenConversationKey)
+        .filter(Boolean)
+    )
+  ).slice(0, MAX_HIDDEN_CONVERSATIONS);
+  const questionIdsByConversation = {};
+  let questionCount = 0;
+  let questionConversationCount = 0;
+  const questionEntries =
+    value.questionIdsByConversation &&
+    typeof value.questionIdsByConversation === "object" &&
+    !Array.isArray(value.questionIdsByConversation)
+      ? Object.entries(value.questionIdsByConversation)
+      : [];
+
+  for (const [rawKey, rawQuestionIds] of questionEntries) {
+    if (questionConversationCount >= MAX_HIDDEN_CONVERSATIONS) {
+      break;
+    }
+    const conversationKey = normalizeHiddenConversationKey(rawKey);
+    if (!conversationKey || !Array.isArray(rawQuestionIds)) continue;
+    const questionIds = Array.from(
+      new Set(rawQuestionIds.map(persistedIdentifier).filter(Boolean))
+    ).slice(0, MAX_HIDDEN_QUESTIONS - questionCount);
+    if (!questionIds.length) continue;
+    questionIdsByConversation[conversationKey] = questionIds;
+    questionConversationCount += 1;
+    questionCount += questionIds.length;
+    if (questionCount >= MAX_HIDDEN_QUESTIONS) break;
+  }
+
+  return {
+    version: 1,
+    conversationKeys,
+    questionIdsByConversation
+  };
+}
+
+async function loadHiddenItems() {
+  if (hiddenItemsCache) return hiddenItemsCache;
+  try {
+    hiddenItemsCache = normalizeHiddenItems(
+      JSON.parse(await readFile(hiddenItemsFilePath(), "utf8"))
+    );
+  } catch {
+    hiddenItemsCache = structuredClone(EMPTY_HIDDEN_ITEMS);
+  }
+  return hiddenItemsCache;
+}
+
+async function saveHiddenItems(hiddenItems) {
+  const normalized = normalizeHiddenItems(hiddenItems);
+  await mkdir(path.dirname(hiddenItemsFilePath()), { recursive: true });
+  const temporaryPath = `${hiddenItemsFilePath()}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await writeFile(temporaryPath, JSON.stringify(normalized), {
+      encoding: "utf8",
+      mode: 0o600
+    });
+    await rename(temporaryPath, hiddenItemsFilePath());
+  } catch (error) {
+    try {
+      rmSync(temporaryPath, { force: true });
+    } catch {}
+    throw error;
+  }
+  hiddenItemsCache = normalized;
+  return normalized;
+}
+
+function mutateHiddenItems(mutator) {
+  const operation = hiddenItemsMutationQueue.then(async () => {
+    const current = await loadHiddenItems();
+    return saveHiddenItems(mutator(current));
+  });
+  hiddenItemsMutationQueue = operation.catch(() => {});
+  return operation;
+}
+
+function assertPersistedIdentifier(value, label) {
+  const identifier = persistedIdentifier(value);
+  if (!identifier) throw new TypeError(`${label} must be non-empty text.`);
+  return identifier;
 }
 
 function isTrustedRendererUrl(value) {
@@ -419,6 +548,97 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   handleTrusted("archive:import", importArchive);
   handleTrusted("library:get", loadLibrary);
+  handleTrusted("hidden:get", loadHiddenItems);
+  handleTrusted("hidden:conversation", async (accountValue, conversationValue) => {
+    const accountUuid = assertPersistedIdentifier(accountValue, "Account UUID");
+    const conversationUuid = assertPersistedIdentifier(
+      conversationValue,
+      "Conversation UUID"
+    );
+    const library = await loadLibrary();
+    const conversationExists = library.conversations.some(
+      (conversation) =>
+        conversation.account_uuid === accountUuid &&
+        conversation.uuid === conversationUuid
+    );
+    if (!conversationExists) {
+      throw new Error("Cannot hide a conversation that is not in the library.");
+    }
+
+    return mutateHiddenItems((current) => {
+      const conversationKey = hiddenConversationKey(
+        accountUuid,
+        conversationUuid
+      );
+      if (current.conversationKeys.includes(conversationKey)) return current;
+      if (current.conversationKeys.length >= MAX_HIDDEN_CONVERSATIONS) {
+        throw new Error("The local hidden-conversation limit has been reached.");
+      }
+      return {
+        ...current,
+        conversationKeys: [...current.conversationKeys, conversationKey]
+      };
+    });
+  });
+  handleTrusted(
+    "hidden:question",
+    async (accountValue, conversationValue, messageValue) => {
+      const accountUuid = assertPersistedIdentifier(accountValue, "Account UUID");
+      const conversationUuid = assertPersistedIdentifier(
+        conversationValue,
+        "Conversation UUID"
+      );
+      const messageUuid = assertPersistedIdentifier(messageValue, "Message UUID");
+      const library = await loadLibrary();
+      const conversation = library.conversations.find(
+        (item) =>
+          item.account_uuid === accountUuid && item.uuid === conversationUuid
+      );
+      if (!conversation) {
+        throw new Error("Cannot hide a question outside the selected conversation.");
+      }
+      if (
+        !conversation.chat_messages.some(
+          (message) => message.uuid === messageUuid && message.sender === "human"
+        )
+      ) {
+        throw new Error("The selected question is not present in the conversation.");
+      }
+
+      return mutateHiddenItems((current) => {
+        const conversationKey = hiddenConversationKey(
+          accountUuid,
+          conversationUuid
+        );
+        const currentQuestionIds =
+          current.questionIdsByConversation[conversationKey] || [];
+        if (currentQuestionIds.includes(messageUuid)) return current;
+        if (
+          !Object.prototype.hasOwnProperty.call(
+            current.questionIdsByConversation,
+            conversationKey
+          ) &&
+          Object.keys(current.questionIdsByConversation).length >=
+            MAX_HIDDEN_CONVERSATIONS
+        ) {
+          throw new Error("The local hidden-question limit has been reached.");
+        }
+        const totalQuestions = Object.values(
+          current.questionIdsByConversation
+        ).reduce((total, questionIds) => total + questionIds.length, 0);
+        if (totalQuestions >= MAX_HIDDEN_QUESTIONS) {
+          throw new Error("The local hidden-question limit has been reached.");
+        }
+        return {
+          ...current,
+          questionIdsByConversation: {
+            ...current.questionIdsByConversation,
+            [conversationKey]: [...currentQuestionIds, messageUuid]
+          }
+        };
+      });
+    }
+  );
   handleTrusted("conversation:set-pinned", async (conversationKey, pinned) => {
     if (
       typeof conversationKey !== "string" ||
@@ -475,6 +695,7 @@ app.whenReady().then(() => {
       message: "这不会删除原始 ZIP，但会清除阅读器中的已导入数据。"
     });
     if (answer.response !== 1) return { canceled: true };
+    await mutateHiddenItems(() => structuredClone(EMPTY_HIDDEN_ITEMS));
     await saveLibrary(structuredClone(EMPTY_LIBRARY));
     return { canceled: false, library: libraryCache };
   });

@@ -98,3 +98,12 @@ export const StarIcon = (props: IconProps) => (
     <path d="m12 3 2.75 5.57 6.15.9-4.45 4.33 1.05 6.12L12 17.03l-5.5 2.89 1.05-6.12L3.1 9.47l6.15-.9z" />
   </IconBase>
 );
+
+export const TrashIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <path d="M4 7h16" />
+    <path d="M9 7V4h6v3" />
+    <path d="m6 7 1 14h10l1-14" />
+    <path d="M10 11v6M14 11v6" />
+  </IconBase>
+);

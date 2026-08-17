@@ -26,6 +26,7 @@
   --line-strong: rgba(46, 43, 37, 0.18);
   --accent: #c8663d;
   --accent-soft: #f1ded4;
+  --danger: #b84d43;
   --human: #f0f0ef;
   --code: #f3f3f2;
   --code-border: #e4e4e3;
@@ -85,6 +86,7 @@
   --line-strong: rgba(239, 233, 222, 0.19);
   --accent: #d8845e;
   --accent-soft: #50362b;
+  --danger: #df8074;
   --human: #35332d;
   --code: #1d1c19;
   --code-border: #44413b;
@@ -439,7 +441,7 @@ html.is-resizing * {
   align-items: center;
   width: 100%;
   min-height: 38px;
-  padding: 0 34px 0 10px;
+  padding: 0 62px 0 10px;
   border: 0;
   border-radius: 8px;
   text-align: left;
@@ -457,10 +459,10 @@ html.is-resizing * {
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
-.conversation-pin {
+.conversation-pin,
+.conversation-delete {
   position: absolute;
   top: 50%;
-  right: 6px;
   display: grid;
   place-items: center;
   width: 26px;
@@ -475,19 +477,37 @@ html.is-resizing * {
   transform: translateY(-50%);
 }
 
+.conversation-pin {
+  right: 32px;
+}
+
+.conversation-delete {
+  right: 5px;
+}
+
 .conversation-row:hover .conversation-pin,
 .conversation-row:focus-within .conversation-pin,
-.conversation-pin.is-pinned {
+.conversation-pin.is-pinned,
+.conversation-row:hover .conversation-delete,
+.conversation-row:focus-within .conversation-delete {
   opacity: 1;
 }
 
 .conversation-pin:hover,
-.conversation-pin:focus-visible {
+.conversation-pin:focus-visible,
+.conversation-delete:hover,
+.conversation-delete:focus-visible {
   color: var(--text);
   background: var(--surface);
 }
 
-.conversation-pin:focus-visible {
+.conversation-delete:hover,
+.conversation-delete:focus-visible {
+  color: var(--danger);
+}
+
+.conversation-pin:focus-visible,
+.conversation-delete:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
   outline-offset: 1px;
 }
@@ -498,6 +518,7 @@ html.is-resizing * {
 }
 
 .conversation-pin svg,
+.conversation-delete svg,
 .conversation-pin-topbar svg {
   width: 15px;
   height: 15px;
@@ -1713,10 +1734,49 @@ html.is-resizing * {
 }
 
 .message-human .message-content {
+  position: relative;
   max-width: 86%;
   padding: 14px 16px;
   border-radius: 16px;
   background: var(--human);
+}
+
+.human-message-delete {
+  position: absolute;
+  top: -28px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: var(--faint);
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.message-human .message-content:hover .human-message-delete,
+.message-human .message-content:focus-within .human-message-delete {
+  opacity: 1;
+}
+
+.human-message-delete:hover,
+.human-message-delete:focus-visible {
+  color: var(--danger);
+  background: var(--panel-hover);
+}
+
+.human-message-delete:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  outline-offset: 1px;
+}
+
+.human-message-delete svg {
+  width: 15px;
+  height: 15px;
 }
 
 .human-message-clip {
@@ -2777,8 +2837,16 @@ html.is-resizing * {
   white-space: normal;
 }
 
-.outline nav button.outline-question:first-child {
+.outline-row:first-child button.outline-question {
   margin-top: 0;
+}
+
+.outline-row {
+  position: relative;
+}
+
+.outline nav button.outline-question {
+  padding-right: 36px;
 }
 
 .outline-question-index {
@@ -2862,6 +2930,137 @@ html.is-resizing * {
 .outline nav button.outline-answer.is-active::before {
   left: 20px;
   z-index: 1;
+}
+
+.outline nav button.outline-question-delete {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--faint);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  opacity: 0;
+  transform: translateY(-50%);
+}
+
+.outline-row-question:hover .outline-question-delete,
+.outline-row-question:focus-within .outline-question-delete {
+  opacity: 1;
+}
+
+.outline nav button.outline-question-delete:hover,
+.outline nav button.outline-question-delete:focus-visible {
+  color: var(--danger);
+  background: var(--surface);
+}
+
+.outline-question-delete svg {
+  width: 15px;
+  height: 15px;
+}
+
+.delete-confirmation-dialog {
+  width: min(430px, calc(100vw - 32px));
+  padding: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 24px 70px color-mix(in srgb, #000 24%, transparent);
+}
+
+.delete-confirmation-dialog::backdrop {
+  background: color-mix(in srgb, #181714 32%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.delete-confirmation-dialog[open] {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 14px 12px;
+}
+
+.delete-confirmation-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 11%, transparent);
+}
+
+.delete-confirmation-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.delete-confirmation-dialog h2 {
+  margin: 1px 0 8px;
+  font-family: var(--font-ui);
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.delete-confirmation-dialog p {
+  margin: 0 0 9px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.delete-confirmation-dialog .delete-confirmation-note {
+  margin-bottom: 0;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.delete-confirmation-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.delete-confirmation-actions button {
+  min-width: 72px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.delete-confirmation-actions .secondary-action {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.delete-confirmation-actions .danger-action {
+  border-color: color-mix(in srgb, var(--danger) 80%, transparent);
+  color: white;
+  background: var(--danger);
+}
+
+.delete-confirmation-actions button:hover,
+.delete-confirmation-actions button:focus-visible {
+  filter: brightness(0.96);
+}
+
+.delete-confirmation-actions button:disabled {
+  cursor: wait;
+  filter: none;
+  opacity: 0.62;
 }
 
 .outline nav button.memory-outline-entry {

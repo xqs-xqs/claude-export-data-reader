@@ -22,9 +22,61 @@ export function currentBranch(messages: Message[]): Message[] {
   return branch.reverse();
 }
 
-export function visibleMessages(conversation?: Conversation): Message[] {
+function isRenderableBlock(message: Message) {
+  const blocks = message.content || [];
+  if (!blocks.length) return Boolean(message.text);
+  return blocks.some(
+    (block) =>
+      !block.hidden &&
+      !block.hidden_in_chat &&
+      ((block.type === "text" && Boolean(block.text)) ||
+        (block.type === "thinking" &&
+          !block.thinking_hidden &&
+          Boolean(block.thinking)) ||
+        block.type === "tool_use" ||
+        block.type === "tool_result")
+  );
+}
+
+export function isVisibleHumanQuestion(message: Message) {
+  return (
+    message.sender === "human" &&
+    (isRenderableBlock(message) ||
+      Boolean(message.files?.length) ||
+      Boolean(
+        message.attachments?.some((attachment) => attachment.extracted_content)
+      ))
+  );
+}
+
+export function visibleMessages(
+  conversation?: Conversation,
+  hiddenQuestionIds: ReadonlySet<string> = new Set()
+): Message[] {
   if (!conversation) return [];
-  return currentBranch(conversation.chat_messages || []);
+  let hideCurrentTurn = false;
+  return currentBranch(conversation.chat_messages || []).filter((message) => {
+    if (isVisibleHumanQuestion(message)) {
+      hideCurrentTurn = hiddenQuestionIds.has(message.uuid);
+    }
+    return !hideCurrentTurn;
+  });
+}
+
+export function questionTurnMessageIds(
+  conversation: Conversation,
+  questionUuid: string
+) {
+  const messageIds = new Set<string>();
+  let insideQuestionTurn = false;
+  for (const message of currentBranch(conversation.chat_messages || [])) {
+    if (isVisibleHumanQuestion(message)) {
+      if (insideQuestionTurn && message.uuid !== questionUuid) break;
+      insideQuestionTurn = message.uuid === questionUuid;
+    }
+    if (insideQuestionTurn) messageIds.add(message.uuid);
+  }
+  return messageIds;
 }
 
 interface AnswerHeadingCandidate extends HeadingEntry {
@@ -186,6 +238,7 @@ export function extractHeadings(messages: Message[]): HeadingEntry[] {
       currentQuestionNumber = questionNumber;
       headings.push({
         id: `message-${message.uuid}`,
+        messageUuid: message.uuid,
         level: 1,
         text: fullText
           ? shortenQuestion(summaryText, questionCount)

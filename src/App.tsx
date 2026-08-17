@@ -12,7 +12,20 @@ import type {
   PointerEvent as ReactPointerEvent
 } from "react";
 import type { Account, Conversation, HeadingEntry, Library } from "./types";
-import { dateLabel, extractHeadings, visibleMessages } from "./conversation";
+import {
+  dateLabel,
+  extractHeadings,
+  questionTurnMessageIds,
+  visibleMessages
+} from "./conversation";
+import {
+  hideConversation,
+  hideQuestion,
+  hiddenConversationKey,
+  persistHiddenItems,
+  readHiddenItems,
+  type HiddenItemsState
+} from "./hiddenItems";
 import MessageView from "./MessageView";
 import MemoryPage, {
   MemoryOutline,
@@ -42,7 +55,8 @@ import {
   OutlineIcon,
   SearchIcon,
   StarIcon,
-  SunIcon
+  SunIcon,
+  TrashIcon
 } from "./icons";
 
 const EMPTY_LIBRARY: Library = {
@@ -99,6 +113,17 @@ interface SearchTarget {
   query: string;
   sequence: number;
 }
+
+type DeleteTarget =
+  | { kind: "conversation"; conversation: Conversation }
+  | {
+      kind: "question";
+      accountUuid: string;
+      conversationUuid: string;
+      conversationKey: string;
+      messageUuid: string;
+      title: string;
+    };
 
 const DEFAULT_FONT_SETTINGS: FontSettings = {
   chat: 16,
@@ -356,6 +381,7 @@ function Sidebar({
   memoryActive: boolean;
   onSelect: (conversation: Conversation) => void;
   onTogglePinned: (conversation: Conversation) => void;
+  onDeleteConversation: (conversation: Conversation) => void;
   onOpenMemory: () => void;
   onOpenSearch: () => void;
   onSelectAccount: (accountUuid: string) => void;
@@ -424,6 +450,17 @@ function Sidebar({
           title={pinned ? "取消收藏" : "收藏并置顶"}
         >
           <StarIcon />
+        </button>
+        <button
+          type="button"
+          className="conversation-delete"
+          onClick={() => onDeleteConversation(conversation)}
+          aria-label={`从阅读器中删除“${conversationDisplayTitle(
+            conversation
+          )}”`}
+          title="从阅读器中删除"
+        >
+          <TrashIcon />
         </button>
       </div>
     );
@@ -823,6 +860,86 @@ function GlobalSearchDialog({
   );
 }
 
+function DeleteConfirmationDialog({
+  target,
+  pending,
+  onConfirm,
+  onRequestClose
+}: {
+  target?: DeleteTarget;
+  pending: boolean;
+  onConfirm: () => void;
+  onRequestClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (target) {
+      if (!dialog.open) dialog.showModal();
+      const frame = window.requestAnimationFrame(() => {
+        cancelButtonRef.current?.focus();
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+    if (dialog.open) dialog.close();
+  }, [target]);
+
+  return (
+    <dialog
+      className="delete-confirmation-dialog"
+      ref={dialogRef}
+      aria-labelledby="delete-confirmation-title"
+      aria-describedby="delete-confirmation-description"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!pending) onRequestClose();
+      }}
+      onClose={() => target && !pending && onRequestClose()}
+    >
+      <div className="delete-confirmation-icon" aria-hidden="true">
+        <TrashIcon />
+      </div>
+      <div>
+        <h2 id="delete-confirmation-title">
+          {target?.kind === "conversation" ? "删除这个对话？" : "删除这个问题？"}
+        </h2>
+        <p id="delete-confirmation-description">
+          {target?.kind === "conversation"
+            ? `“${conversationDisplayTitle(
+                target.conversation
+              )}”将从阅读器中永久隐藏。`
+            : `“${target?.title || "该问题"}”以及下一次提问前的对应回答、工具调用和文件卡片都将永久隐藏。`}
+        </p>
+        <p className="delete-confirmation-note">
+          原始 Claude 导出 ZIP 和本地导入数据不会被修改；阅读器不提供恢复入口。
+        </p>
+      </div>
+      <div className="delete-confirmation-actions">
+        <button
+          type="button"
+          className="secondary-action"
+          ref={cancelButtonRef}
+          onClick={onRequestClose}
+          disabled={pending}
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          className="danger-action"
+          onClick={onConfirm}
+          disabled={pending}
+        >
+          {pending ? "正在删除…" : "删除"}
+        </button>
+      </div>
+    </dialog>
+  );
+}
+
 function ConversationFindBar({
   query,
   activeIndex,
@@ -909,11 +1026,13 @@ function Outline({
   headings,
   activeId,
   onNavigate,
+  onDeleteQuestion,
   onClose
 }: {
   headings: HeadingEntry[];
   activeId?: string;
   onNavigate: (id: string) => void;
+  onDeleteQuestion: (heading: HeadingEntry) => void;
   onClose: () => void;
 }) {
   const firstQuestion = headings.find((heading) => heading.kind === "question");
@@ -959,36 +1078,51 @@ function Outline({
       {headings.length ? (
         <nav aria-label="对话目录">
           {visibleEntries.map((heading) => (
-            <button
+            <div
               key={heading.id}
-              className={`outline-entry outline-${heading.kind} ${
-                activeId === heading.id ? "is-active" : ""
-              } ${
-                heading.kind === "question" &&
-                heading.questionNumber === activeQuestionNumber
-                  ? "is-group-open"
-                  : ""
-              } ${
-                heading.kind === "answer"
-                  ? `outline-depth-${answerDepths.get(heading.id) || 0}`
-                  : ""
-              }`}
-              title={heading.fullText || heading.text}
-              onClick={() => onNavigate(heading.id)}
-              aria-expanded={
-                heading.kind === "question"
-                  ? heading.questionNumber === activeQuestionNumber
-                  : undefined
-              }
-              aria-current={activeId === heading.id ? "location" : undefined}
+              className={`outline-row outline-row-${heading.kind}`}
             >
-              {heading.kind === "question" && (
-                <span className="outline-question-index">
-                  {heading.questionNumber}
-                </span>
+              <button
+                className={`outline-entry outline-${heading.kind} ${
+                  activeId === heading.id ? "is-active" : ""
+                } ${
+                  heading.kind === "question" &&
+                  heading.questionNumber === activeQuestionNumber
+                    ? "is-group-open"
+                    : ""
+                } ${
+                  heading.kind === "answer"
+                    ? `outline-depth-${answerDepths.get(heading.id) || 0}`
+                    : ""
+                }`}
+                title={heading.fullText || heading.text}
+                onClick={() => onNavigate(heading.id)}
+                aria-expanded={
+                  heading.kind === "question"
+                    ? heading.questionNumber === activeQuestionNumber
+                    : undefined
+                }
+                aria-current={activeId === heading.id ? "location" : undefined}
+              >
+                {heading.kind === "question" && (
+                  <span className="outline-question-index">
+                    {heading.questionNumber}
+                  </span>
+                )}
+                <span className="outline-entry-text">{heading.text}</span>
+              </button>
+              {heading.kind === "question" && heading.messageUuid && (
+                <button
+                  type="button"
+                  className="outline-question-delete"
+                  onClick={() => onDeleteQuestion(heading)}
+                  aria-label={`删除问题：${heading.fullText || heading.text}`}
+                  title="删除这个问题及对应回答"
+                >
+                  <TrashIcon />
+                </button>
               )}
-              <span className="outline-entry-text">{heading.text}</span>
-            </button>
+            </div>
           ))}
         </nav>
       ) : (
@@ -1087,6 +1221,12 @@ export default function App() {
       initialSession.outlineOpen ??
       localStorage.getItem("outline-open") !== "false"
   );
+  const [hiddenItems, setHiddenItems] = useState<HiddenItemsState>(
+    readHiddenItems
+  );
+  const hiddenItemsRef = useRef(hiddenItems);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>();
+  const [deletePending, setDeletePending] = useState(false);
   const mainScrollPositionsRef = useRef<Record<string, number>>({
     ...(initialSession.mainScrollPositions || {})
   });
@@ -1150,6 +1290,10 @@ export default function App() {
     () => new Set()
   );
   const [notice, setNotice] = useState<string>();
+  const hiddenConversationKeys = useMemo(
+    () => new Set(hiddenItems.conversationKeys),
+    [hiddenItems.conversationKeys]
+  );
   const activeAccount = useMemo(
     () =>
       library.accounts.find(
@@ -1162,10 +1306,17 @@ export default function App() {
     () =>
       activeAccountUuid
         ? library.conversations.filter(
-            (conversation) => conversation.account_uuid === activeAccountUuid
+            (conversation) =>
+              conversation.account_uuid === activeAccountUuid &&
+              !hiddenConversationKeys.has(
+                hiddenConversationKey(
+                  conversation.account_uuid,
+                  conversation.uuid
+                )
+              )
           )
         : [],
-    [activeAccountUuid, library.conversations]
+    [activeAccountUuid, hiddenConversationKeys, library.conversations]
   );
   const memoryRecords = useMemo(() => {
     const latestByAccount = new Map<string, Library["memories"][number]>();
@@ -1234,8 +1385,12 @@ export default function App() {
     [memoryAnchorPrefix, memoryText]
   );
   const searchIndex = useMemo(
-    () => buildConversationSearchIndex(accountConversations),
-    [accountConversations]
+    () =>
+      buildConversationSearchIndex(
+        accountConversations,
+        hiddenItems.questionIdsByConversation
+      ),
+    [accountConversations, hiddenItems.questionIdsByConversation]
   );
   const conversations = useMemo(
     () => searchIndex.map((entry) => entry.conversation),
@@ -1311,6 +1466,16 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("outline-open", String(outlineOpen));
   }, [outlineOpen]);
+
+  useEffect(() => {
+    hiddenItemsRef.current = hiddenItems;
+    if (!window.readerAPI) persistHiddenItems(hiddenItems);
+  }, [hiddenItems]);
+
+  useEffect(() => {
+    hiddenItemsRef.current = hiddenItems;
+    if (!window.readerAPI) persistHiddenItems(hiddenItems);
+  }, [hiddenItems]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -1431,9 +1596,22 @@ export default function App() {
 
   useEffect(() => {
     if (window.readerAPI) {
-      window.readerAPI
-        .getLibrary()
-        .then((nextLibrary) => setLibrary(nextLibrary))
+      Promise.all([
+        window.readerAPI.getLibrary(),
+        window.readerAPI.getHiddenItems()
+      ])
+        .then(([nextLibrary, nextHiddenItems]) => {
+          hiddenItemsRef.current = nextHiddenItems;
+          setHiddenItems(nextHiddenItems);
+          setLibrary(nextLibrary);
+        })
+        .catch((error) => {
+          setNotice(
+            error instanceof Error
+              ? error.message
+              : "无法读取本地阅读器数据。"
+          );
+        })
         .finally(() => setLibraryReady(true));
     } else if (new URLSearchParams(window.location.search).has("demo")) {
       setLibrary(DEMO_LIBRARY);
@@ -1503,16 +1681,29 @@ export default function App() {
 
   const selectedConversation = useMemo(
     () =>
-      library.conversations.find(
+      accountConversations.find(
         (conversation) =>
-          conversation.account_uuid === activeAccountUuid &&
           `${conversation.account_uuid}:${conversation.uuid}` === selectedKey
       ),
-    [activeAccountUuid, library.conversations, selectedKey]
+    [accountConversations, selectedKey]
+  );
+  const hiddenQuestionIds = useMemo(
+    () =>
+      new Set(
+      selectedConversation
+          ? hiddenItems.questionIdsByConversation[
+              hiddenConversationKey(
+                selectedConversation.account_uuid,
+                selectedConversation.uuid
+              )
+            ] || []
+          : []
+    ),
+    [hiddenItems.questionIdsByConversation, selectedConversation]
   );
   const messages = useMemo(
-    () => visibleMessages(selectedConversation),
-    [selectedConversation]
+    () => visibleMessages(selectedConversation, hiddenQuestionIds),
+    [hiddenQuestionIds, selectedConversation]
   );
   const selectedSearchEntry = useMemo(
     () => searchIndex.find((entry) => entry.key === selectedKey),
@@ -2218,6 +2409,115 @@ export default function App() {
     });
   }
 
+  function requestDeleteConversation(conversation: Conversation) {
+    setDeleteTarget({ kind: "conversation", conversation });
+  }
+
+  function requestDeleteQuestion(heading: HeadingEntry) {
+    if (!selectedKey || !selectedConversation || !heading.messageUuid) return;
+    setDeleteTarget({
+      kind: "question",
+      accountUuid: selectedConversation.account_uuid,
+      conversationUuid: selectedConversation.uuid,
+      conversationKey: selectedKey,
+      messageUuid: heading.messageUuid,
+      title: heading.fullText || heading.text
+    });
+  }
+
+  async function confirmDeleteTarget() {
+    const target = deleteTarget;
+    if (!target || deletePending) return;
+    setDeletePending(true);
+    setNotice(undefined);
+
+    let nextHidden: HiddenItemsState;
+    try {
+      if (target.kind === "question") {
+        nextHidden = window.readerAPI
+          ? await window.readerAPI.hideQuestionLocally(
+              target.accountUuid,
+              target.conversationUuid,
+              target.messageUuid
+            )
+          : hideQuestion(
+              hiddenItemsRef.current,
+              target.accountUuid,
+              target.conversationUuid,
+              target.messageUuid
+            );
+      } else {
+        nextHidden = window.readerAPI
+          ? await window.readerAPI.hideConversationLocally(
+              target.conversation.account_uuid,
+              target.conversation.uuid
+            )
+          : hideConversation(
+              hiddenItemsRef.current,
+              target.conversation.account_uuid,
+              target.conversation.uuid
+            );
+      }
+      if (!window.readerAPI && !persistHiddenItems(nextHidden)) {
+        throw new Error("无法保存本地隐藏记录，请检查浏览器存储权限。");
+      }
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "无法保存本地删除状态。"
+      );
+      setDeletePending(false);
+      return;
+    }
+
+    hiddenItemsRef.current = nextHidden;
+    setHiddenItems(nextHidden);
+    setDeleteTarget(undefined);
+    setDeletePending(false);
+
+    if (target.kind === "question") {
+      setSearchTarget(undefined);
+      setConversationFindOpen(false);
+      setConversationFindQuery("");
+      const conversation = library.conversations.find(
+        (item) =>
+          item.account_uuid === target.accountUuid &&
+          item.uuid === target.conversationUuid
+      );
+      const hiddenTurnMessageIds = conversation
+        ? questionTurnMessageIds(conversation, target.messageUuid)
+        : new Set<string>();
+      if (
+        activeHeading &&
+        [...hiddenTurnMessageIds].some(
+          (messageUuid) =>
+            activeHeading === `message-${messageUuid}` ||
+            activeHeading.startsWith(`heading-${messageUuid}-`)
+        )
+      ) {
+        setActiveHeading(undefined);
+      }
+      return;
+    }
+
+    const deletedKey = conversationKey(target.conversation);
+    setGlobalSearchOpen(false);
+    setSearchTarget(undefined);
+    setConversationFindOpen(false);
+    setConversationFindQuery("");
+    if (selectedKey !== deletedKey) return;
+    const nextConversation = library.conversations.find(
+      (conversation) =>
+        conversation.account_uuid === target.conversation.account_uuid &&
+        !nextHidden.conversationKeys.includes(
+          hiddenConversationKey(conversation.account_uuid, conversation.uuid)
+        )
+    );
+    setPrimaryView("conversation");
+    setSelectedKey(
+      nextConversation ? conversationKey(nextConversation) : undefined
+    );
+  }
+
   function panelMaximum(side: PanelSide) {
     const otherWidth =
       side === "sidebar"
@@ -2386,6 +2686,7 @@ export default function App() {
           memoryActive={primaryView === "memory"}
           onSelect={selectConversation}
           onTogglePinned={toggleConversationPinned}
+          onDeleteConversation={requestDeleteConversation}
           onOpenMemory={openMemory}
           onOpenSearch={openGlobalSearch}
           onSelectAccount={selectAccount}
@@ -2603,6 +2904,26 @@ export default function App() {
                 <MessageView
                   key={message.uuid}
                   message={message}
+                  onDelete={
+                    message.sender === "human"
+                      ? () => {
+                          const heading = conversationHeadings.find(
+                            (entry) => entry.messageUuid === message.uuid
+                          );
+                          setDeleteTarget({
+                            kind: "question",
+                            accountUuid: selectedConversation.account_uuid,
+                            conversationUuid: selectedConversation.uuid,
+                            conversationKey: selectedKey || "",
+                            messageUuid: message.uuid,
+                            title:
+                              heading?.fullText ||
+                              heading?.text ||
+                              "这个问题"
+                          });
+                        }
+                      : undefined
+                  }
                   highlightQuery={
                     (!conversationFindPending &&
                     conversationFindHighlightQuery &&
@@ -2673,6 +2994,7 @@ export default function App() {
             headings={conversationHeadings}
             activeId={activeHeading}
             onNavigate={navigateToHeading}
+            onDeleteQuestion={requestDeleteQuestion}
             onClose={() => setOutlineOpen(false)}
           />
         )
@@ -2698,6 +3020,12 @@ export default function App() {
           setGlobalSearchOpen(false);
         }}
         onRequestClose={() => setGlobalSearchOpen(false)}
+      />
+      <DeleteConfirmationDialog
+        target={deleteTarget}
+        pending={deletePending}
+        onConfirm={confirmDeleteTarget}
+        onRequestClose={() => !deletePending && setDeleteTarget(undefined)}
       />
     </div>
   );

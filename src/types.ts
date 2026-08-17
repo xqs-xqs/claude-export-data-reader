@@ -128,6 +128,13 @@ export interface HeadingEntry {
   fullText?: string;
   kind: "question" | "answer";
   questionNumber?: number;
+  messageUuid?: string;
+}
+
+export interface HiddenItemsState {
+  version: 1;
+  conversationKeys: string[];
+  questionIdsByConversation: Record<string, string[]>;
 }
 
 export interface ImportResult {
@@ -150,6 +157,19 @@ declare global {
         conversationKey: string,
         pinned: boolean
       ): Promise<Library>;
+      getHiddenItems(): Promise<HiddenItemsState>;
+      hideConversationLocally(
+        accountUuid: string,
+        conversationUuid: string
+      ): Promise<HiddenItemsState>;
+      hideQuestionLocally(
+        accountUuid: string,
+        conversationUuid: string,
+        messageUuid: string
+      ): Promise<HiddenItemsState>;
+      onNavigationCommand(
+        handler: (direction: "back" | "forward") => void
+      ): () => void;
     };
   }
 }

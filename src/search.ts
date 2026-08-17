@@ -1,5 +1,6 @@
 import type { Conversation, Message } from "./types";
 import { visibleMessages } from "./conversation";
+import { hiddenConversationKey } from "./hiddenItems";
 import { protectMathInMarkdown } from "./math";
 
 export interface SearchMessageMatch {
@@ -197,7 +198,8 @@ export function conversationDisplayTitle(conversation: Conversation) {
 }
 
 export function buildConversationSearchIndex(
-  conversations: Conversation[]
+  conversations: Conversation[],
+  hiddenQuestionIdsByConversation: Readonly<Record<string, readonly string[]>> = {}
 ): ConversationSearchIndex[] {
   return [...conversations]
     .sort(
@@ -210,7 +212,17 @@ export function buildConversationSearchIndex(
       normalizedTitle: normalizeSearchText(
         conversationDisplayTitle(conversation)
       ),
-      messages: visibleMessages(conversation)
+      messages: visibleMessages(
+        conversation,
+        new Set(
+          hiddenQuestionIdsByConversation[
+            hiddenConversationKey(
+              conversation.account_uuid,
+              conversation.uuid
+            )
+          ] || []
+        )
+      )
         .map((message) => {
           const text = plainMessageText(visibleMessageText(message));
           return {

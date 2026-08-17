@@ -8,7 +8,7 @@ import {
 } from "react";
 import type { ContentBlock, Message } from "./types";
 import MarkdownBlock from "./MarkdownBlock";
-import { ChevronIcon, FileIcon } from "./icons";
+import { ChevronIcon, FileIcon, TrashIcon } from "./icons";
 import {
   buildMessageFilePreviews,
   fileTypeLabel,
@@ -434,10 +434,12 @@ function FilePreviewCard({ file }: { file: MessageFilePreview }) {
 
 export default function MessageView({
   message,
-  highlightQuery
+  highlightQuery,
+  onDelete
 }: {
   message: Message;
   highlightQuery?: string;
+  onDelete?: (message: Message) => void;
 }) {
   const isHuman = message.sender === "human";
   const [humanMessageExpanded, setHumanMessageExpanded] = useState(false);
@@ -558,6 +560,17 @@ export default function MessageView({
       id={`message-${message.uuid}`}
     >
       <div className="message-content">
+        {isHuman && onDelete && (
+          <button
+            type="button"
+            className="human-message-delete"
+            onClick={() => onDelete(message)}
+            aria-label="从阅读器中删除这个问题及对应回答"
+            title="删除这个问题及对应回答"
+          >
+            <TrashIcon />
+          </button>
+        )}
         {isHuman ? (
           <>
             <div
