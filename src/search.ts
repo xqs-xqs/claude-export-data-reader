@@ -193,6 +193,15 @@ function conversationTimestamp(conversation: Conversation) {
   ).getTime();
 }
 
+export function sortConversationsByRecency(
+  conversations: Conversation[]
+) {
+  return [...conversations].sort(
+    (left, right) =>
+      conversationTimestamp(right) - conversationTimestamp(left)
+  );
+}
+
 export function conversationDisplayTitle(conversation: Conversation) {
   return conversation.name?.trim() || "未命名会话";
 }
@@ -201,12 +210,7 @@ export function buildConversationSearchIndex(
   conversations: Conversation[],
   hiddenQuestionIdsByConversation: Readonly<Record<string, readonly string[]>> = {}
 ): ConversationSearchIndex[] {
-  return [...conversations]
-    .sort(
-      (left, right) =>
-        conversationTimestamp(right) - conversationTimestamp(left)
-    )
-    .map((conversation) => ({
+  return sortConversationsByRecency(conversations).map((conversation) => ({
       conversation,
       key: `${conversation.account_uuid}:${conversation.uuid}`,
       normalizedTitle: normalizeSearchText(

@@ -4,6 +4,10 @@ import type { ParsedHeading } from "./headings";
 
 const QUESTION_MIN_LENGTH = 24;
 const QUESTION_MAX_LENGTH = 48;
+const conversationDateFormatter = new Intl.DateTimeFormat("zh-CN", {
+  month: "short",
+  day: "numeric"
+});
 
 export function currentBranch(messages: Message[]): Message[] {
   if (messages.length < 2) return messages;
@@ -287,8 +291,5 @@ export function dateLabel(value?: string) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "short",
-    day: "numeric"
-  }).format(date);
+  return conversationDateFormatter.format(date);
 }

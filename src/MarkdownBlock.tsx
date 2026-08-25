@@ -528,15 +528,16 @@ export default function MarkdownBlock({
       ...sanitizationOptions,
       FORBID_ATTR: ["srcset", "style"]
     });
-    const renderedWithMath = renderMathPlaceholders(
-      sanitizedMarkdown,
-      protectedMath.formulas
-    );
-
-    const html = DOMPurify.sanitize(renderedWithMath, {
-      ...sanitizationOptions,
-      FORBID_ATTR: ["srcset"]
-    });
+    const html =
+      protectedMath.formulas.length === 0
+        ? sanitizedMarkdown
+        : DOMPurify.sanitize(
+            renderMathPlaceholders(sanitizedMarkdown, protectedMath.formulas),
+            {
+              ...sanitizationOptions,
+              FORBID_ATTR: ["srcset"]
+            }
+          );
 
     return {
       codeTexts,

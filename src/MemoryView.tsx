@@ -7,6 +7,16 @@ import type {
   PreparedStructuredMemory
 } from "./memory";
 import MarkdownBlock from "./MarkdownBlock";
+const memoryDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric"
+});
+const memoryDateWithYearFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric"
+});
+
 import { ArrowLeftIcon, ChevronIcon } from "./icons";
 
 interface MemoryPageProps {
@@ -167,11 +177,11 @@ function updatedLabel(value: string | undefined) {
   if (days === 0) return "Updated today";
   if (days === 1) return "Updated yesterday";
   if (days < 7) return `Updated ${days} days ago`;
-  return `Updated ${new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: updated.getFullYear() === now.getFullYear() ? undefined : "numeric"
-  }).format(updated)}`;
+  const formatter =
+    updated.getFullYear() === now.getFullYear()
+      ? memoryDateFormatter
+      : memoryDateWithYearFormatter;
+  return `Updated ${formatter.format(updated)}`;
 }
 
 function StructuredMemoryBrowser({

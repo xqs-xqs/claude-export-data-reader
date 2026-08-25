@@ -43,7 +43,8 @@ import {
   conversationDisplayTitle,
   findSearchMatchRanges,
   normalizeSearchText,
-  searchConversationIndex
+  searchConversationIndex,
+  sortConversationsByRecency
 } from "./search";
 import {
   canNavigateHistory,
@@ -1403,8 +1404,11 @@ export default function App() {
         ? activeMemory?.project_memories[activeProjectMemoryUuid]
         : undefined;
   const structuredMemory = useMemo(
-    () => prepareStructuredMemoryFiles(activeMemory?.memory_files),
-    [activeMemory?.memory_files]
+    () =>
+      prepareStructuredMemoryFiles(
+        primaryView === "memory" ? activeMemory?.memory_files : undefined
+      ),
+    [activeMemory?.memory_files, primaryView]
   );
   const structuredAccountMode = Boolean(
     memoryScope === "account" &&
@@ -1419,20 +1423,33 @@ export default function App() {
     activeMemoryAccountUuid || "none"
   }-${memoryScope}-${activeProjectMemoryUuid || "account"}`;
   const memoryDocument = useMemo(
-    () => prepareMemoryDocument(memoryText, memoryAnchorPrefix),
-    [memoryAnchorPrefix, memoryText]
+    () =>
+      prepareMemoryDocument(
+        primaryView === "memory" ? memoryText : undefined,
+        memoryAnchorPrefix
+      ),
+    [memoryAnchorPrefix, memoryText, primaryView]
+  );
+  const globalSearchIndexActive = useDeferredValue(
+    globalSearchOpen || Boolean(globalSearchQuery.trim())
   );
   const searchIndex = useMemo(
     () =>
-      buildConversationSearchIndex(
-        accountConversations,
-        hiddenItems.questionIdsByConversation
-      ),
-    [accountConversations, hiddenItems.questionIdsByConversation]
+      globalSearchIndexActive
+        ? buildConversationSearchIndex(
+            accountConversations,
+            hiddenItems.questionIdsByConversation
+          )
+        : [],
+    [
+      accountConversations,
+      globalSearchIndexActive,
+      hiddenItems.questionIdsByConversation
+    ]
   );
   const conversations = useMemo(
-    () => searchIndex.map((entry) => entry.conversation),
-    [searchIndex]
+    () => sortConversationsByRecency(accountConversations),
+    [accountConversations]
   );
   const pinnedAtByKey = useMemo(
     () =>
@@ -1808,8 +1825,18 @@ export default function App() {
     [hiddenQuestionIds, selectedConversation]
   );
   const selectedSearchEntry = useMemo(
-    () => searchIndex.find((entry) => entry.key === selectedKey),
-    [searchIndex, selectedKey]
+    () =>
+      conversationFindOpen && selectedConversation
+        ? buildConversationSearchIndex(
+            [selectedConversation],
+            hiddenItems.questionIdsByConversation
+          )[0]
+        : undefined,
+    [
+      conversationFindOpen,
+      hiddenItems.questionIdsByConversation,
+      selectedConversation
+    ]
   );
   const conversationFindMatchingMessageIds = useMemo(() => {
     if (!conversationFindHighlightQuery || !selectedSearchEntry) {

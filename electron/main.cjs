@@ -46,6 +46,7 @@ const MAX_HIDDEN_QUESTIONS = 2_000_000;
 
 let mainWindow;
 let libraryCache;
+let libraryLoadPromise;
 let hiddenItemsCache;
 let hiddenItemsMutationQueue = Promise.resolve();
 let activeDevelopmentOrigin;
@@ -161,16 +162,23 @@ function normalizeLibrary(value) {
   return normalizeStoredLibrary(value);
 }
 
-async function loadLibrary() {
-  if (libraryCache) return libraryCache;
-  try {
-    libraryCache = normalizeLibrary(
-      JSON.parse(await readFile(dataFilePath(), "utf8"))
-    );
-  } catch {
-    libraryCache = structuredClone(EMPTY_LIBRARY);
+function loadLibrary() {
+  if (libraryCache) return Promise.resolve(libraryCache);
+  if (!libraryLoadPromise) {
+    libraryLoadPromise = (async () => {
+      try {
+        libraryCache = normalizeLibrary(
+          JSON.parse(await readFile(dataFilePath(), "utf8"))
+        );
+      } catch {
+        libraryCache = structuredClone(EMPTY_LIBRARY);
+      }
+      return libraryCache;
+    })().finally(() => {
+      libraryLoadPromise = undefined;
+    });
   }
-  return libraryCache;
+  return libraryLoadPromise;
 }
 
 async function saveLibrary(library) {
@@ -756,6 +764,7 @@ app.whenReady().then(() => {
     await saveLibrary(structuredClone(EMPTY_LIBRARY));
     return { canceled: false, library: libraryCache };
   });
+  void loadLibrary();
   createWindow();
 
   app.on("activate", () => {

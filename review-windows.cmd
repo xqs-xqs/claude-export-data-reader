@@ -8,9 +8,14 @@ if not exist "node_modules\electron\dist\electron.exe" (
   if errorlevel 1 goto :error
 )
 
-echo Building Claude Export Data Reader...
-call npm.cmd run build
-if errorlevel 1 goto :error
+node.exe scripts\needs-build.cjs
+if errorlevel 1 (
+  echo Building Claude Export Data Reader...
+  call npm.cmd run build
+  if errorlevel 1 goto :error
+) else (
+  echo Using the existing Claude Export Data Reader build...
+)
 
 echo Starting the desktop reader...
 start "" "node_modules\electron\dist\electron.exe" .
