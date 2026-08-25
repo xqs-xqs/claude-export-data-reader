@@ -12,7 +12,7 @@
 
 <div align="center">
 
-> Turn a Claude export ZIP into a searchable, browsable local conversation library.
+> Turn a legacy Claude export ZIP or the four new split ZIP categories into a searchable, browsable local conversation library.
 
 A read-only desktop app for reviewing exported Claude conversations. Follows Claude Web's visual language to restore a native reading experience. 
 
@@ -55,7 +55,8 @@ A read-only desktop app for reviewing exported Claude conversations. Follows Cla
 - Reader history with Back and Forward buttons, `Alt+Left / Alt+Right`, and Windows mouse side-button support
 - Restoration of the last account, conversation or Memory view, sidebar state, and reading position on launch
 - Independently resizable sidebars for different screens and reading preferences
-- Repeated ZIP imports with SHA-256 duplicate detection
+- Compatibility with legacy single ZIPs and the new `light_metadata`, `projects`, `memories`, and `conversations` split ZIPs; multiple parts in a category are merged by part number
+- Repeated imports with SHA-256 duplicate detection for each complete export batch
 - Account switching with strict data isolation: conversations, search results, Pinned items, and Memory are limited to the currently selected account
 
 ## ⚠️ Important limitation: exported files
@@ -66,7 +67,8 @@ When enough metadata remains, Claude Export Data Reader displays a reconstructed
 
 ## 🔒 Privacy and data handling
 
-- The selected ZIP is read without modifying the original file
+- Only ZIPs explicitly selected by the user are read; original files are not modified and no additional content is downloaded automatically
+- Login history contained in new `light_metadata` exports is neither parsed nor stored
 - Imported data is stored only in Electron's local application-data directory
 - **Delete** only hides an item persistently in the local reader UI. It does not modify the ZIP or imported conversation text, is not secure erasure, and has no restore action in the app
 - Conversation data is not uploaded and no Claude account or API key is required
@@ -97,7 +99,8 @@ npm run build
 npm start
 ```
 
-You can also double-click `review-windows.cmd` after installing dependencies.
+You can also double-click `review-windows.cmd` after installing dependencies. It rebuilds automatically on the first launch or after renderer source/configuration changes; otherwise it reuses the current build for faster startup.
+
 
 If Electron was installed without its Chromium binary, run:
 
@@ -110,7 +113,8 @@ This repository currently provides a source-based local build. A packaged Window
 ## 📖 Use
 
 1. Start the application.
-2. Click **Import data** and select a Claude Export ZIP.
+2. Click **Import data**. For a legacy export, select one Claude Export ZIP. For a new export, multi-select `light_metadata-000.zip`, `projects-000.zip`, `memories-000.zip`, and `conversations-000.zip` in the same file dialog.
+   If a category also has `001`, `002`, or later parts, select those at the same time; selection order does not matter. The reader validates all four categories, part numbering, and account ownership before writing any local data.
 3. When multiple accounts have been imported, switch accounts from the menu in the lower-left corner.
 4. Choose a conversation from the left sidebar, or open Memory to browse exported account and project memories.
 5. Use `Ctrl+F` to search the current conversation, or `Ctrl+Shift+F` to search the current account's local library.
