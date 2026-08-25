@@ -1,7 +1,6 @@
 const { createHash } = require("node:crypto");
 const { readFile, stat } = require("node:fs/promises");
 const path = require("node:path");
-const JSZip = require("jszip");
 
 const MEBIBYTE = 1024 * 1024;
 const ARCHIVE_LIMITS = Object.freeze({
@@ -20,6 +19,27 @@ const ARCHIVE_LIMITS = Object.freeze({
   jsonNodes: 2_000_000,
   stringCharacters: 32 * MEBIBYTE
 });
+
+const SPLIT_EXPORT_CATEGORIES = new Set([
+  "light_metadata",
+  "projects",
+  "memories",
+  "conversations"
+]);
+const SPLIT_EXPORT_LIMITS = Object.freeze({
+  files: 256,
+  compressedBytes: 1024 * MEBIBYTE,
+  entries: ARCHIVE_LIMITS.entries,
+  jsonTotalBytes: ARCHIVE_LIMITS.jsonTotalBytes,
+  jsonNodes: ARCHIVE_LIMITS.jsonNodes
+});
+
+let zipLibrary;
+
+function getZipLibrary() {
+  zipLibrary ||= require("jszip");
+  return zipLibrary;
+}
 
 function inspectCentralDirectory(buffer) {
   const minimumEocdBytes = 22;
@@ -120,13 +140,21 @@ function entrySizes(entry) {
   return { compressedSize, uncompressedSize };
 }
 
-function assertJsonComplexity(value, label) {
+function assertJsonComplexity(value, label, sharedBudget) {
   const stack = [{ depth: 0, value }];
   let nodes = 0;
 
   while (stack.length > 0) {
     const current = stack.pop();
     nodes += 1;
+    if (sharedBudget) {
+      sharedBudget.used += 1;
+      if (sharedBudget.used > sharedBudget.limit) {
+        throw new Error(
+          "The split export batch contains too many JSON values."
+        );
+      }
+    }
     if (nodes > ARCHIVE_LIMITS.jsonNodes) {
       throw new Error(`${label} contains too many JSON values.`);
     }
@@ -202,7 +230,12 @@ function optionalNumber(value, label) {
   return value;
 }
 
-async function readJsonText(entry, label, extractionBudget) {
+async function readJsonText(
+  entry,
+  label,
+  extractionBudget,
+  totalLimit = ARCHIVE_LIMITS.jsonTotalBytes
+) {
   const chunks = [];
   let entryBytes = 0;
   const stream = entry.internalStream("uint8array");
@@ -224,7 +257,7 @@ async function readJsonText(entry, label, extractionBudget) {
         fail(new Error(`${label} exceeds the actual extraction limit.`));
         return;
       }
-      if (extractionBudget.used > ARCHIVE_LIMITS.jsonTotalBytes) {
+      if (extractionBudget.used > totalLimit) {
         fail(new Error("The archive exceeds the total JSON extraction limit."));
         return;
       }
@@ -735,7 +768,7 @@ async function parseArchive(filePath) {
   inspectCentralDirectory(buffer);
   const sha256 = createHash("sha256").update(buffer).digest("hex");
   const importedAt = new Date().toISOString();
-  const zip = await JSZip.loadAsync(buffer, { checkCRC32: false });
+  const zip = await getZipLibrary().loadAsync(buffer, { checkCRC32: false });
   const archiveEntries = Object.values(zip.files);
   if (archiveEntries.length > ARCHIVE_LIMITS.entries) {
     throw new Error("The selected ZIP contains too many entries.");
@@ -909,8 +942,588 @@ async function parseArchive(filePath) {
   };
 }
 
+function looksLikeSplitRecord(value, category) {
+  if (!isRecord(value)) return false;
+  if (category === "conversations") {
+    return typeof value.uuid === "string" && Array.isArray(value.chat_messages);
+  }
+  if (category === "projects") {
+    return (
+      typeof value.uuid === "string" &&
+      ("name" in value ||
+        "description" in value ||
+        "docs" in value ||
+        "creator" in value)
+    );
+  }
+  if (category === "memories") {
+    return (
+      "account_uuid" in value ||
+      "conversations_memory" in value ||
+      "project_memories" in value ||
+      "memory_files" in value
+    );
+  }
+  const stableId = value.uuid ?? value.account_uuid ?? value.id;
+  const displayName = value.full_name ?? value.name;
+  const emailAddress = value.email_address ?? value.email;
+  return (
+    typeof stableId === "string" &&
+    Boolean(stableId.trim()) &&
+    ((typeof displayName === "string" && Boolean(displayName.trim())) ||
+      (typeof emailAddress === "string" && Boolean(emailAddress.trim())))
+  );
+}
+
+const SPLIT_RECORD_KEYS = Object.freeze({
+  light_metadata: ["users", "user", "accounts", "account"],
+  projects: ["projects", "project"],
+  memories: ["memories", "memory"],
+  conversations: ["conversations", "conversation"]
+});
+
+function isSplitUserFilename(value) {
+  const filename = String(value || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .pop();
+  return /^(?:users?|accounts?|light[-_]metadata)(?:[-_]\d+)?\.(?:json|jsonl|ndjson)$/i.test(
+    filename || ""
+  );
+}
+
+function extractSplitRecords(
+  value,
+  category,
+  label,
+  depth = 0,
+  sourceName = ""
+) {
+  if (depth > 3) return { recognized: false, records: [] };
+  if (Array.isArray(value)) {
+    if (
+      category === "light_metadata" &&
+      !isSplitUserFilename(sourceName)
+    ) {
+      return { recognized: false, records: [] };
+    }
+    if (
+      value.length === 0 ||
+      value.every((record) => looksLikeSplitRecord(record, category))
+    ) {
+      return { recognized: true, records: value };
+    }
+    return { recognized: false, records: [] };
+  }
+  if (!isRecord(value)) return { recognized: false, records: [] };
+
+  for (const key of SPLIT_RECORD_KEYS[category]) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+    const nested = value[key];
+    if (Array.isArray(nested)) {
+      return { recognized: true, records: nested };
+    }
+    if (isRecord(nested)) {
+      return { recognized: true, records: [nested] };
+    }
+    throw new TypeError(label + "." + key + " must contain records.");
+  }
+
+  for (const key of ["data", "items"]) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+    const nested = extractSplitRecords(
+      value[key],
+      category,
+      label + "." + key,
+      depth + 1,
+      sourceName
+    );
+    if (nested.recognized) return nested;
+  }
+
+  if (
+    category === "light_metadata" &&
+    !isSplitUserFilename(sourceName)
+  ) {
+    return { recognized: false, records: [] };
+  }
+  return looksLikeSplitRecord(value, category)
+    ? { recognized: true, records: [value] }
+    : { recognized: false, records: [] };
+}
+
+function parseSplitJson(text, label, lineDelimited, complexityBudget) {
+  if (!lineDelimited) {
+    const value = JSON.parse(text);
+    assertJsonComplexity(value, label, complexityBudget);
+    return [value];
+  }
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const lineLabel = label + " line " + (index + 1);
+      const value = JSON.parse(line);
+      assertJsonComplexity(value, lineLabel, complexityBudget);
+      return value;
+    });
+}
+
+function isSplitDataEntry(category, entryName) {
+  const normalized = String(entryName || "").replace(/\\/g, "/");
+  if (category === "light_metadata") {
+    return /^(?:users?|accounts?)(?:[-_]\d+)?\.(?:json|jsonl|ndjson)$/i.test(
+      normalized
+    );
+  }
+  if (category === "projects") {
+    return /^(?:projects(?:[-_]\d+)?|projects\/[^/]+)\.(?:json|jsonl|ndjson)$/i.test(
+      normalized
+    );
+  }
+  if (category === "memories") {
+    return /^(?:memories(?:[-_]\d+)?|memories\/[^/]+)\.(?:json|jsonl|ndjson)$/i.test(
+      normalized
+    );
+  }
+  return /^(?:conversations(?:[-_]\d+)?|conversations\/[^/]+)\.(?:json|jsonl|ndjson)$/i.test(
+    normalized
+  );
+}
+
+async function parseSplitArchivePart(
+  descriptor,
+  filePath,
+  batchBudget
+) {
+  const archiveStat = await stat(filePath);
+  if (!archiveStat.isFile()) {
+    throw new TypeError(descriptor.filename + " is not a regular file.");
+  }
+  if (archiveStat.size > ARCHIVE_LIMITS.compressedBytes) {
+    throw new Error(descriptor.filename + " is larger than 512 MiB.");
+  }
+  batchBudget.compressedBytes += archiveStat.size;
+  if (batchBudget.compressedBytes > SPLIT_EXPORT_LIMITS.compressedBytes) {
+    throw new Error("The split export batch is larger than the supported limit.");
+  }
+
+  const buffer = await readFile(filePath);
+  if (buffer.length !== archiveStat.size) {
+    throw new Error(descriptor.filename + " changed while it was being read.");
+  }
+  inspectCentralDirectory(buffer);
+  const sha256 = createHash("sha256").update(buffer).digest("hex");
+  const zip = await getZipLibrary().loadAsync(buffer, { checkCRC32: false });
+  const archiveEntries = Object.values(zip.files);
+  batchBudget.entries += archiveEntries.length;
+  if (batchBudget.entries > SPLIT_EXPORT_LIMITS.entries) {
+    throw new Error("The split export batch contains too many entries.");
+  }
+
+  const jsonEntries = archiveEntries.filter(
+    (entry) =>
+      !entry.dir && isSplitDataEntry(descriptor.category, entry.name)
+  );
+  if (jsonEntries.length === 0) {
+    throw new Error(
+      descriptor.filename + " does not contain supported category data."
+    );
+  }
+
+  for (const entry of jsonEntries) {
+    const sizes = entrySizes(entry);
+    if (sizes.uncompressedSize > ARCHIVE_LIMITS.jsonEntryBytes) {
+      throw new Error(
+        descriptor.filename + " contains a JSON entry larger than the limit."
+      );
+    }
+    batchBudget.declaredJsonBytes += sizes.uncompressedSize;
+    if (batchBudget.declaredJsonBytes > SPLIT_EXPORT_LIMITS.jsonTotalBytes) {
+      throw new Error("The split export batch contains too much JSON data.");
+    }
+    if (
+      sizes.uncompressedSize > MEBIBYTE &&
+      (sizes.compressedSize === 0 ||
+        sizes.uncompressedSize / sizes.compressedSize >
+          ARCHIVE_LIMITS.compressionRatio)
+    ) {
+      throw new Error(
+        descriptor.filename + " contains an unsafe compression ratio."
+      );
+    }
+  }
+
+  const records = [];
+  let recognizedDocuments = 0;
+  for (const entry of jsonEntries) {
+    const label =
+      descriptor.category + " archive " + descriptor.filename + ":" + entry.name;
+    try {
+      const text = await readJsonText(
+        entry,
+        label,
+        batchBudget.extraction,
+        SPLIT_EXPORT_LIMITS.jsonTotalBytes
+      );
+      const documents = parseSplitJson(
+        text,
+        label,
+        /\.(?:jsonl|ndjson)$/i.test(entry.name),
+        batchBudget.complexity
+      );
+      for (const document of documents) {
+        const extracted = extractSplitRecords(
+          document,
+          descriptor.category,
+          label,
+          0,
+          entry.name
+        );
+        if (!extracted.recognized) continue;
+        recognizedDocuments += 1;
+        for (const record of extracted.records) {
+          records.push(record);
+        }
+      }
+    } catch (error) {
+      throw new Error("Unable to read local data from " + descriptor.filename + ".", {
+        cause: error
+      });
+    }
+  }
+  if (recognizedDocuments === 0) {
+    throw new Error(
+      descriptor.filename + " uses an unsupported " + descriptor.category + " schema."
+    );
+  }
+  return { sha256, records };
+}
+
+function normalizeSplitUser(value, label) {
+  const user = requireRecord(value, label);
+  const normalized = normalizeUser(
+    {
+      uuid: user.uuid ?? user.id ?? user.account_uuid,
+      full_name: user.full_name ?? user.name,
+      email_address: user.email_address ?? user.email
+    },
+    label
+  );
+  if (
+    !normalized.uuid?.trim() ||
+    (!normalized.full_name?.trim() && !normalized.email_address?.trim())
+  ) {
+    throw new TypeError(
+      label + " must contain a stable account UUID and name or email."
+    );
+  }
+  return normalized;
+}
+
+function mergeSplitMemories(memories) {
+  const merged = new Map();
+  for (const memory of memories) {
+    if (!memory.account_uuid) continue;
+    const current = merged.get(memory.account_uuid);
+    if (!current) {
+      merged.set(memory.account_uuid, memory);
+      continue;
+    }
+    merged.set(memory.account_uuid, {
+      ...current,
+      conversations_memory:
+        memory.conversations_memory ?? current.conversations_memory,
+      project_memories: {
+        ...current.project_memories,
+        ...memory.project_memories
+      },
+      memory_files: mergeByKey(
+        current.memory_files,
+        memory.memory_files,
+        (file) => file.path
+      )
+    });
+  }
+  return Array.from(merged.values());
+}
+
+function splitArchiveDescriptor(archivePath) {
+  if (typeof archivePath !== "string") {
+    throw new TypeError("Every split export ZIP path must be text.");
+  }
+  const filename = path.basename(archivePath);
+  const match =
+    /^(light_metadata|projects|memories|conversations)-(\d{3,})\.zip$/i.exec(
+      filename
+    );
+  if (!match) {
+    throw new Error(
+      "新版 Claude 导出需要同时选择 light_metadata、projects、memories 和 conversations 分包。"
+    );
+  }
+  const part = Number(match[2]);
+  if (!Number.isSafeInteger(part)) {
+    throw new Error("A split export ZIP has an invalid part number.");
+  }
+  return {
+    category: match[1].toLocaleLowerCase("en-US"),
+    part,
+    filename
+  };
+}
+
+async function parseSplitArchiveBatch(archivePaths) {
+  if (!Array.isArray(archivePaths) || archivePaths.length === 0) {
+    throw new TypeError("Select all Claude split export ZIPs together.");
+  }
+  if (archivePaths.length > SPLIT_EXPORT_LIMITS.files) {
+    throw new Error("The split export batch contains too many ZIP files.");
+  }
+
+  const descriptors = archivePaths.map(splitArchiveDescriptor);
+  const categoryParts = new Set();
+  for (const descriptor of descriptors) {
+    const key = descriptor.category + ":" + descriptor.part;
+    if (categoryParts.has(key)) {
+      throw new Error("The split export repeats a category part number.");
+    }
+    categoryParts.add(key);
+  }
+  for (const category of SPLIT_EXPORT_CATEGORIES) {
+    const categoryFiles = descriptors
+      .filter((descriptor) => descriptor.category === category)
+      .sort((left, right) => left.part - right.part);
+    if (categoryFiles.length === 0) {
+      throw new Error("The split export is missing the " + category + " ZIP.");
+    }
+    categoryFiles.forEach((descriptor, index) => {
+      if (descriptor.part !== index) {
+        throw new Error(
+          "The split export " + category +
+            " parts must be continuous from 000."
+        );
+      }
+    });
+  }
+
+  return parseSplitArchiveDescriptors(
+    descriptors,
+    archivePaths,
+    "Claude split export (" + descriptors.length + " ZIPs)"
+  );
+}
+
+async function parseSplitArchiveDescriptors(dataFiles, archivePaths, importedFrom) {
+  if (!Array.isArray(archivePaths)) {
+    throw new TypeError("Split export ZIP paths must be provided as an array.");
+  }
+
+  const declaredFiles = new Map(
+    dataFiles.map((file) => [
+      file.filename.toLocaleLowerCase("en-US"),
+      file
+    ])
+  );
+  const selectedFiles = new Map();
+  for (const archivePath of archivePaths) {
+    if (typeof archivePath !== "string") {
+      throw new TypeError("Every split export ZIP path must be text.");
+    }
+    const basename = path.basename(archivePath);
+    const key = basename.toLocaleLowerCase("en-US");
+    if (!declaredFiles.has(key)) {
+      throw new Error("A selected ZIP is not part of this split export batch.");
+    }
+    if (selectedFiles.has(key)) {
+      throw new Error("A split export ZIP was selected more than once.");
+    }
+    selectedFiles.set(key, archivePath);
+  }
+  const missingFiles = dataFiles
+    .filter(
+      (file) =>
+        !selectedFiles.has(file.filename.toLocaleLowerCase("en-US"))
+    )
+    .map((file) => file.filename);
+  if (missingFiles.length > 0) {
+    throw new Error("Missing split export ZIP files: " + missingFiles.join(", "));
+  }
+
+  const batchBudget = {
+    compressedBytes: 0,
+    entries: 0,
+    declaredJsonBytes: 0,
+    extraction: { used: 0 },
+    complexity: { used: 0, limit: SPLIT_EXPORT_LIMITS.jsonNodes }
+  };
+  const raw = {
+    light_metadata: [],
+    projects: [],
+    memories: [],
+    conversations: []
+  };
+  const orderedDescriptors = [...dataFiles].sort(
+    (left, right) =>
+      left.category.localeCompare(right.category) ||
+      left.part - right.part ||
+      left.filename.localeCompare(right.filename)
+  );
+  const combinedHash = createHash("sha256");
+  combinedHash.update("claude-export-split-v1\0");
+  for (const descriptor of orderedDescriptors) {
+    const key = descriptor.filename.toLocaleLowerCase("en-US");
+    const parsedPart = await parseSplitArchivePart(
+      descriptor,
+      selectedFiles.get(key),
+      batchBudget
+    );
+    for (const record of parsedPart.records) {
+      raw[descriptor.category].push(record);
+    }
+    combinedHash.update(descriptor.category + "\0");
+    combinedHash.update(String(descriptor.part) + "\0");
+    combinedHash.update(descriptor.filename.toLocaleLowerCase("en-US") + "\0");
+    combinedHash.update(parsedPart.sha256 + "\n");
+  }
+
+  if (raw.light_metadata.length > ARCHIVE_LIMITS.users) {
+    throw new Error("The split export batch contains too many user records.");
+  }
+  if (raw.projects.length > ARCHIVE_LIMITS.projects) {
+    throw new Error("The split export batch contains too many project records.");
+  }
+  if (raw.memories.length > ARCHIVE_LIMITS.memories) {
+    throw new Error("The split export batch contains too many memory records.");
+  }
+  if (raw.conversations.length > ARCHIVE_LIMITS.conversations) {
+    throw new Error("The split export batch contains too many conversations.");
+  }
+
+  const users = raw.light_metadata.map((user, index) =>
+    normalizeSplitUser(user, "light_metadata[" + index + "]")
+  );
+  const conversations = raw.conversations.map((conversation, index) =>
+    normalizeConversation(conversation, "conversations[" + index + "]")
+  );
+  const projects = raw.projects.map((project, index) =>
+    normalizeProject(project, "projects[" + index + "]")
+  );
+  const rawMemories = raw.memories.map((memory, index) => {
+    requireRecord(memory, "memories[" + index + "]");
+    return normalizeMemoryRecord(memory, "memories[" + index + "]");
+  });
+  const messageCount = conversations.reduce(
+    (count, conversation) => count + conversation.chat_messages.length,
+    0
+  );
+  if (messageCount > ARCHIVE_LIMITS.messages) {
+    throw new Error("The split export batch contains too many messages.");
+  }
+
+  const sha256 = combinedHash.digest("hex");
+  const importedAt = new Date().toISOString();
+  if (users.length === 0) {
+    throw new Error("The light_metadata ZIP does not declare an account.");
+  }
+  const accountDetails = new Map();
+  for (const user of users) {
+    const current = accountDetails.get(user.uuid);
+    accountDetails.set(user.uuid, {
+      uuid: user.uuid,
+      full_name: user.full_name || current?.full_name || "未命名账户",
+      email_address: user.email_address || current?.email_address || "",
+      imported_from: importedFrom
+    });
+  }
+
+  function resolveDeclaredAccountUuid(primaryUuid, secondaryUuid, label) {
+    const primary =
+      typeof primaryUuid === "string" && primaryUuid.trim()
+        ? primaryUuid
+        : undefined;
+    const secondary =
+      typeof secondaryUuid === "string" && secondaryUuid.trim()
+        ? secondaryUuid
+        : undefined;
+    if (primary && secondary && primary !== secondary) {
+      throw new Error(label + " declares conflicting account UUIDs.");
+    }
+    const explicitUuid = primary || secondary;
+    if (!explicitUuid) {
+      throw new Error(label + " does not declare an account UUID.");
+    }
+    if (!accountDetails.has(explicitUuid)) {
+      throw new Error(
+        label + " belongs to an account not declared by light_metadata."
+      );
+    }
+    return explicitUuid;
+  }
+
+  const accounts = Array.from(accountDetails.values());
+  const normalizedConversations = mergeByKey(
+    [],
+    conversations.map(({ account, ...conversation }) => ({
+      ...conversation,
+      account_uuid: resolveDeclaredAccountUuid(
+        account?.uuid,
+        conversation.account_uuid,
+        "Conversation " + conversation.uuid
+      )
+    })),
+    (conversation) => conversation.account_uuid + ":" + conversation.uuid
+  );
+  const normalizedProjects = mergeByKey(
+    [],
+    projects.map(({ creator, ...project }) => ({
+      ...project,
+      account_uuid: resolveDeclaredAccountUuid(
+        creator?.uuid,
+        project.account_uuid,
+        "Project " + project.uuid
+      )
+    })),
+    (project) => project.account_uuid + ":" + project.uuid
+  );
+  const memories = mergeSplitMemories(
+    rawMemories
+      .map((memory) => ({
+        account_uuid: resolveDeclaredAccountUuid(
+          memory.account_uuid,
+          undefined,
+          "A memory record"
+        ),
+        conversations_memory: memory.conversations_memory,
+        project_memories: memory.project_memories,
+        memory_files: memory.memory_files,
+        imported_from: importedFrom,
+        imported_at: importedAt,
+        source_sha256: sha256
+      }))
+      .filter(
+        (memory) =>
+          (memory.conversations_memory !== undefined ||
+            memory.memory_files.length > 0 ||
+            Object.keys(memory.project_memories).length > 0)
+      )
+  );
+
+  return {
+    sha256,
+    filename: importedFrom,
+    importedAt,
+    accounts,
+    conversations: normalizedConversations,
+    projects: normalizedProjects,
+    memories
+  };
+}
+
 module.exports = {
   mergeByKey,
   normalizeStoredLibrary,
-  parseArchive
+  parseArchive,
+  parseSplitArchiveBatch
 };

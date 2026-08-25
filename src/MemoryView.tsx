@@ -143,7 +143,7 @@ export default function MemoryPage({
               ? scope === "account"
                 ? "当前账户的导出数据中没有 Account Memory；Project Memory 仍可单独查看。"
                 : "当前项目没有导出的 Project Memory。"
-              : "请重新导入包含 memories.json 的 Claude Export ZIP。"}
+              : "请重新导入包含 Memory 数据的 Claude 导出 ZIP。"}
           </p>
         </div>
       )}

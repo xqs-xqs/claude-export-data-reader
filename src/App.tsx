@@ -2728,7 +2728,7 @@ export default function App() {
             }。`
       );
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "导入失败，请检查 ZIP。");
+      setNotice(error instanceof Error ? error.message : "导入失败，请检查导出文件。");
     } finally {
       setImporting(false);
     }

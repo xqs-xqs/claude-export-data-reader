@@ -21,7 +21,8 @@ const { fileURLToPath } = require("node:url");
 const {
   mergeByKey,
   normalizeStoredLibrary,
-  parseArchive
+  parseArchive,
+  parseSplitArchiveBatch
 } = require("./archive.cjs");
 
 const DEVELOPMENT_ORIGIN = "http://127.0.0.1:5173";
@@ -403,13 +404,31 @@ function developmentServerUrl() {
 
 async function importArchive() {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: "选择 Claude Export ZIP",
-    properties: ["openFile"],
-    filters: [{ name: "ZIP archive", extensions: ["zip"] }]
+    title: "选择 Claude 导出 ZIP（新版请同时选择四类分包）",
+    properties: ["openFile", "multiSelections"],
+    filters: [{ name: "Claude Export ZIP", extensions: ["zip"] }]
   });
   if (result.canceled || result.filePaths.length === 0) return { canceled: true };
 
-  const parsed = await parseArchive(result.filePaths[0]);
+  const splitPattern =
+    /^(?:light_metadata|projects|memories|conversations)-\d{3,}\.zip$/i;
+  const splitSelections = result.filePaths.filter((filePath) =>
+    splitPattern.test(path.basename(filePath))
+  );
+  let parsed;
+  if (result.filePaths.length === 1 && splitSelections.length === 0) {
+    parsed = await parseArchive(result.filePaths[0]);
+  } else {
+    if (splitSelections.length !== result.filePaths.length) {
+      throw new Error(
+        "旧版请选择一个完整 ZIP；新版请同时选择全部四类分包 ZIP。"
+      );
+    }
+    if (result.filePaths.length === 1) {
+      throw new Error("新版 Claude 导出请一次性选择全部四类 ZIP 分包。");
+    }
+    parsed = await parseSplitArchiveBatch(result.filePaths);
+  }
   const library = await loadLibrary();
   const duplicate = library.imports.some(
     (item) => item.sha256 === parsed.sha256
