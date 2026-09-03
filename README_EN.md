@@ -24,6 +24,32 @@ A read-only desktop app for reviewing exported Claude conversations. Follows Cla
   <a href="./README.md">简体中文</a> | <strong>English</strong>
 </p>
 
+## 📸 Feature preview
+
+### Three-pane local archive reading
+
+Pinned conversations, the main transcript, reading controls, and the outline stay together for focused long-form review.
+
+![Three-pane local archive reader](./docs/screenshots/01-reader-overview.png)
+
+### Native content fidelity
+
+Code blocks, LaTeX formulas, and low-border tables share a Claude-inspired visual system that preserves technical structure.
+
+![Code, formula, and table rendering](./docs/screenshots/02-rich-content.png)
+
+### Full-text retrieval across conversations
+
+Search titles, prompts, and answers within the active account, then jump from a highlighted result to the original message.
+
+![Full-text search across conversations](./docs/screenshots/03-full-text-search.png)
+
+### Multiple accounts and structured Memory
+
+The account menu keeps archives strictly separated, while newer Memory exports are organized into You, Topics, Areas, and People.
+
+![Account switching and structured Memory](./docs/screenshots/04-memory-and-accounts.png)
+
 ## ✨ Features
 
 ### 🎨 Claude-inspired reading experience

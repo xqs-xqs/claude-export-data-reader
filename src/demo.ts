@@ -13,8 +13,14 @@ export const DEMO_LIBRARY: Library = {
   accounts: [
     {
       uuid: "demo-account",
-      full_name: "演示账户",
-      email_address: "",
+      full_name: "Demo Archive",
+      email_address: "demo.reader@example.com",
+      imported_from: "claude-export-demo.zip"
+    },
+    {
+      uuid: "demo-secondary-account",
+      full_name: "Research Sandbox",
+      email_address: "sandbox@example.com",
       imported_from: "claude-export-demo.zip"
     }
   ],
@@ -28,13 +34,6 @@ export const DEMO_LIBRARY: Library = {
   memories: [
     {
       account_uuid: "demo-account",
-      conversations_memory:
-        "**Work context**\n\nThis fictional account is reviewing an exported conversation archive in a local desktop reader.\n\n" +
-        "**Personal context**\n\nThis sample demonstrates how account-level Memory is presented without using real user information.\n\n" +
-        "**Top of mind**\n\nThe current example focuses on read-only rendering and clear navigation.\n\n" +
-        "**Brief history**\n\n*Recent months*\n\nThe sample archive gained search, formula rendering, collapsible process blocks, and an outline.\n\n" +
-        "*Earlier context*\n\nThe fictional archive was created to exercise the reader interface.\n\n" +
-        "*Long-term background*\n\nAll sample content is synthetic and remains local.",
       project_memories: {
         "demo-project":
           "**Purpose & context**\n\nDemonstrate project-specific Memory without mixing it into account Memory.\n\n" +
@@ -42,9 +41,53 @@ export const DEMO_LIBRARY: Library = {
           "**On the horizon**\n\nContinue improving archive fidelity.\n\n" +
           "**Key learnings & principles**\n\n*Technical:*\n\nPreserve the original Memory headings.\n\n" +
           "*Metacognitive:*\n\nDo not invent titles for ordinary paragraphs.\n\n" +
-          "**Approach & patterns**\n\nUse explicit exported structure whenever it is available.\n\n" +
-          "**Tools & resources**\n\nElectron, React, TypeScript, and the Claude export ZIP."
-      }
+          "**Approach & patterns**\n\nUse explicit exported structure whenever it is available."
+      },
+      memory_files: [
+        {
+          path: "/profile.md",
+          updated_at: "2026-08-31T09:00:00Z",
+          content:
+            "---\nname: profile\ndescription: Fictional profile used to demonstrate private local archives.\n---\n\n- [stated] Prefers concise technical explanations\n- [stated] Keeps exported conversations as a searchable reference library\n- [inferred] Values local-first tools and transparent data handling"
+        },
+        {
+          path: "/topics/local-archives.md",
+          updated_at: "2026-08-30T10:00:00Z",
+          content:
+            "---\nname: local archives\ndescription: Notes about organizing and reviewing exported conversation data.\n---\n\n- [stated] Preserve the original conversation order\n- [stated] Search titles and message text together\n- [derived] Keep the source archive read-only"
+        },
+        {
+          path: "/topics/interface-design.md",
+          updated_at: "2026-08-29T11:00:00Z",
+          content:
+            "---\nname: interface design\ndescription: Reading preferences for long-form technical conversations.\n---\n\n- [stated] Use a calm reading background\n- [stated] Keep navigation visible without crowding the article\n- [observed] Prefer consistent typography across prose, tables, and code"
+        },
+        {
+          path: "/areas/search-and-navigation.md",
+          updated_at: "2026-08-31T12:00:00Z",
+          content:
+            "---\nname: search and navigation\ndescription: Full-text retrieval, outlines, and reading-history behavior.\n---\n\n- [stated] Jump directly from a search result to its message\n- [stated] Highlight the active match\n- [derived] Restore the last reading position after reopening"
+        },
+        {
+          path: "/areas/import-compatibility.md",
+          updated_at: "2026-08-28T08:30:00Z",
+          content:
+            "---\nname: import compatibility\ndescription: Compatibility notes for legacy and split Claude exports.\n---\n\n- [stated] Accept the legacy single ZIP format\n- [stated] Merge numbered parts from the four-category export\n- [derived] Validate a complete batch before saving"
+        },
+        {
+          path: "/people/example-collaborator.md",
+          updated_at: "2026-08-27T08:00:00Z",
+          content:
+            "---\nname: example collaborator\ndescription: A fictional collaborator included only in the public demo.\n---\n\n- [stated] Reviews interface changes\n- [stated] Uses only synthetic examples in documentation"
+        }
+      ]
+    },
+    {
+      account_uuid: "demo-secondary-account",
+      conversations_memory:
+        "**Work context**\n\nThis second fictional account demonstrates strict account separation.\n\n" +
+        "**Top of mind**\n\nKeep sandbox research separate from the primary archive.",
+      project_memories: {}
     }
   ],
   conversations: [
@@ -256,11 +299,56 @@ export const DEMO_LIBRARY: Library = {
       uuid: "demo-second",
       account_uuid: "demo-account",
       name: "附件与项目数据检查",
-      summary: "演示第二条聊天。",
+      summary: "检查本地附件占位和归档搜索。",
       created_at: "2026-07-18T08:00:00Z",
       updated_at: "2026-07-18T09:00:00Z",
-      chat_messages: []
+      chat_messages: [
+        {
+          uuid: "demo-second-human",
+          sender: "human",
+          created_at: "2026-07-18T08:00:00Z",
+          parent_message_uuid: "root",
+          text: "怎样在本地归档中快速找到附件记录？"
+        },
+        {
+          uuid: "demo-second-assistant",
+          sender: "assistant",
+          created_at: "2026-07-18T08:00:03Z",
+          parent_message_uuid: "demo-second-human",
+          text:
+            "# 本地检索\n\n全文搜索会同时匹配对话标题、问题和回答，并从结果直接跳转到原消息。"
+        }
+      ]
+    },
+    {
+      uuid: "demo-secondary-conversation",
+      account_uuid: "demo-secondary-account",
+      name: "研究笔记整理",
+      summary: "另一个虚构账户中的独立会话。",
+      created_at: "2026-08-20T08:00:00Z",
+      updated_at: "2026-08-20T09:00:00Z",
+      chat_messages: [
+        {
+          uuid: "demo-secondary-human",
+          sender: "human",
+          created_at: "2026-08-20T08:00:00Z",
+          parent_message_uuid: "root",
+          text: "请把这份测试研究记录整理成提纲。"
+        },
+        {
+          uuid: "demo-secondary-assistant",
+          sender: "assistant",
+          created_at: "2026-08-20T08:00:03Z",
+          parent_message_uuid: "demo-secondary-human",
+          text: "# 示例提纲\n\n这条会话只属于研究沙盒账户。"
+        }
+      ]
     }
   ],
-  pinned_conversations: []
+  pinned_conversations: [
+    {
+      conversation_key: "demo-account:demo-conversation",
+      pinned_at: "2026-07-23T08:00:00Z"
+    }
+  ]
 };

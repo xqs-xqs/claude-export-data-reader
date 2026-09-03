@@ -28,6 +28,34 @@
 
 ---
 
+## 📸 功能预览
+
+### 三栏本地归档阅读
+
+Pinned、会话正文、顶部阅读工具与右侧目录集中在同一界面，适合连续回看长对话。
+
+![三栏本地归档阅读界面](./docs/screenshots/01-reader-overview.png)
+
+### 原生内容还原
+
+代码块、LaTeX 公式与少边框表格按 Claude 风格统一渲染，保留技术内容的阅读层次。
+
+![代码、公式与表格渲染](./docs/screenshots/02-rich-content.png)
+
+### 跨会话全文检索
+
+在当前账户中同时搜索标题、问题和回答，关键词高亮后可直接跳回原消息。
+
+![跨会话全文搜索](./docs/screenshots/03-full-text-search.png)
+
+### 多账户与结构化 Memory
+
+账户菜单严格隔离不同归档；新版 Memory 按 You、Topics、Areas 与 People 分类浏览。
+
+![多账户切换与结构化 Memory](./docs/screenshots/04-memory-and-accounts.png)
+
+---
+
 ## ✨ 现有功能
 
 ### 🎨 Claude 风格阅读体验
